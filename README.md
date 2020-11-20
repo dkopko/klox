@@ -56,6 +56,48 @@ $ ./c/BUILD/RelWithDebInfo/klox [filename]  # Runs the REPL, or optionally provi
     * Regions shift:  C = empty, B = newB.
   * Main thread continues execution, again with only 2 active regions.
 
+## Cost
+The shift in cost to instructions (measured in rdtsc ticks in my latop) is as follows (see ilat_compare.20201120-093555.out):
+```
+OP_INVOKE            lat:       74.8 ->      393.8 (+   426.7 %), Runtime%:  20.4 (+ 13.0), AbsRuntime:  37074303340 (+   426.7 %)
+OP_GET_PROPERTY      lat:       42.6 ->      129.8 (+   204.6 %), Runtime%:  10.2 (+  3.8), AbsRuntime:  18529172900 (+   204.6 %)
+OP_GET_GLOBAL        lat:       31.1 ->      144.3 (+   364.6 %), Runtime%:   9.8 (+  5.8), AbsRuntime:  17785420640 (+   364.6 %)
+OP_POP               lat:       25.8 ->       23.3 (-     9.5 %), Runtime%:   9.6 (- 10.5), AbsRuntime:  17387137800 (-     9.5 %)
+OP_CONSTANT          lat:       27.6 ->       27.6 (+     0.0 %), Runtime%:   9.1 (-  8.1), AbsRuntime:  16466932580 (+     0.0 %)
+OP_CALL              lat:       72.0 ->      381.9 (+   430.4 %), Runtime%:   7.4 (+  4.8), AbsRuntime:  13529367320 (+   430.4 %)
+OP_EQUAL             lat:       30.0 ->       44.2 (+    47.5 %), Runtime%:   5.8 (-  1.7), AbsRuntime:  10619069340 (+    47.5 %)
+OP_RETURN            lat:       27.1 ->       58.5 (+   116.2 %), Runtime%:   4.2 (+  0.5), AbsRuntime:   7597343520 (+   116.2 %)
+OP_SET_GLOBAL        lat:       48.4 ->      290.5 (+   500.4 %), Runtime%:   4.0 (+  2.7), AbsRuntime:   7201398900 (+   500.4 %)
+OP_GET_LOCAL         lat:       24.4 ->       25.2 (+     3.4 %), Runtime%:   3.4 (-  2.8), AbsRuntime:   6176571620 (+     3.4 %)
+OP_SET_PROPERTY      lat:      317.8 ->      637.6 (+   100.6 %), Runtime%:   3.1 (+  0.2), AbsRuntime:   5701034940 (+   100.6 %)
+OP_NIL               lat:       29.1 ->       28.0 (-     4.0 %), Runtime%:   2.7 (-  2.7), AbsRuntime:   4969797780 (-     4.0 %)
+OP_TRUE              lat:       28.4 ->       27.3 (-     3.9 %), Runtime%:   2.7 (-  2.6), AbsRuntime:   4909803000 (-     3.9 %)
+OP_ADD               lat:       28.7 ->       50.2 (+    74.9 %), Runtime%:   2.7 (-  0.2), AbsRuntime:   4893626840 (+    74.9 %)
+OP_JUMP_IF_FALSE     lat:       27.7 ->       29.7 (+     7.0 %), Runtime%:   1.7 (-  1.3), AbsRuntime:   3138139200 (+     7.0 %)
+OP_LESS              lat:       27.2 ->       47.3 (+    73.8 %), Runtime%:   1.4 (-  0.1), AbsRuntime:   2546950840 (+    73.8 %)
+OP_SUBTRACT          lat:       23.9 ->       41.1 (+    71.8 %), Runtime%:   0.7 (-  0.1), AbsRuntime:   1328402540 (+    71.8 %)
+OP_LOOP              lat:       30.1 ->       32.8 (+     9.0 %), Runtime%:   0.4 (-  0.3), AbsRuntime:    760897920 (+     9.0 %)
+OP_FALSE             lat:       30.3 ->       30.8 (+     1.8 %), Runtime%:   0.3 (-  0.3), AbsRuntime:    616244880 (+     1.8 %)
+OP_GREATER           lat:       33.6 ->       64.5 (+    91.7 %), Runtime%:   0.1 (+  0.0), AbsRuntime:    117306100 (+    91.7 %)
+OP_PRINT             lat:    24463.9 ->   210066.3 (+   758.7 %), Runtime%:   0.1 (+  0.0), AbsRuntime:    109024400 (+   758.7 %)
+OP_NOT               lat:       33.1 ->       43.7 (+    31.9 %), Runtime%:   0.1 (-  0.0), AbsRuntime:    102239420 (+    31.9 %)
+OP_SUPER_INVOKE      lat:       58.5 ->      162.1 (+   177.1 %), Runtime%:   0.0 (+  0.0), AbsRuntime:     54037880 (+   177.1 %)
+OP_JUMP              lat:       29.1 ->       31.6 (+     8.5 %), Runtime%:   0.0 (-  0.0), AbsRuntime:     40643540 (+     8.5 %)
+OP_SET_LOCAL         lat:       27.0 ->       35.3 (+    30.8 %), Runtime%:   0.0 (-  0.0), AbsRuntime:     30673140 (+    30.8 %)
+OP_GET_UPVALUE       lat:       31.2 ->       72.1 (+   130.8 %), Runtime%:   0.0 (+  0.0), AbsRuntime:     24039980 (+   130.8 %)
+OP_CLOSURE           lat:     1350.8 ->     1979.0 (+    46.5 %), Runtime%:   0.0 (-  0.0), AbsRuntime:       540280 (+    46.5 %)
+OP_DEFINE_GLOBAL     lat:      374.8 ->     1973.3 (+   426.5 %), Runtime%:   0.0 (+  0.0), AbsRuntime:       536740 (+   426.5 %)
+OP_NEGATE            lat:       48.3 ->       92.2 (+    90.9 %), Runtime%:   0.0 (+  0.0), AbsRuntime:       504400 (+    90.9 %)
+OP_CLASS             lat:      699.6 ->     1773.1 (+   153.5 %), Runtime%:   0.0 (+  0.0), AbsRuntime:       175540 (+   153.5 %)
+OP_METHOD            lat:      395.6 ->     1036.6 (+   162.1 %), Runtime%:   0.0 (+  0.0), AbsRuntime:       173120 (+   162.1 %)
+OP_INHERIT           lat:      920.8 ->     2124.8 (+   130.8 %), Runtime%:   0.0 (+  0.0), AbsRuntime:        53120 (+   130.8 %)
+OP_CLOSE_UPVALUE     lat:      255.6 ->      471.2 (+    84.4 %), Runtime%:   0.0 (-  0.0), AbsRuntime:        15080 (+    84.4 %)
+OP_MULTIPLY          lat:      138.3 ->      273.9 (+    98.1 %), Runtime%:   0.0 (+  0.0), AbsRuntime:         6300 (+    98.1 %)
+OP_DIVIDE            lat:      194.5 ->      410.9 (+   111.2 %), Runtime%:   0.0 (+  0.0), AbsRuntime:         4520 (+   111.2 %)
+OP_SET_UPVALUE       lat:      260.0 ->      576.0 (+   121.5 %), Runtime%:   0.0 (+  0.0), AbsRuntime:         2880 (+   121.5 %)
+OP_GET_SUPER         lat:     1360.0 ->      820.0 (-    39.7 %), Runtime%:   0.0 (-  0.0), AbsRuntime:          820 (-    39.7 %)
+```
+
 
 ## Understanding the Code
 * `struct cb` - A "continuous buffer".  This is a power-of-2-sized ring
@@ -176,6 +218,10 @@ $ ./c/BUILD/RelWithDebInfo/klox [filename]  # Runs the REPL, or optionally provi
   implementation that was abandoned.  Aside from `struct cb`,
   `struct cb_region`, and `struct cb_bst`, most of the remaining code of that
   project is abandoned.
+
+
+
+
 
 ## Dedication
 This work is dedicated to my family, with a special thank you to my parents, who
