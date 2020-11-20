@@ -1,0 +1,49 @@
+#!/usr/bin/env -S gawk -M -f
+
+# Takes ilat dumps of two runs and reports the second arg vs. the first.
+# Useful for comparing how a new implementation compares against a prior one
+# down to the instruction level.
+
+function abs(value)
+{
+  return (value<0?-value:value);
+}
+
+
+/^#/ { next }  #skip comments
+
+ARGIND == 1 {
+    oldops[$1]["count"] += $3
+    oldops[$1]["op_total_lat"] += $7
+    oldtotallat += $7
+}
+
+ARGIND == 2 {
+    newops[$1]["count"] += $3
+    newops[$1]["op_total_lat"] += $7
+    newtotallat += $7
+}
+
+END {
+    for (op in newops) {
+        #if (newops[op]["count"] != oldops[op]["count"]) {
+        #    print op " ERROR - count mismatch (" newops[op]["count"] " != " oldops[op]["count"] ")"
+        #    continue
+        #}
+
+        oldavglat = oldops[op]["op_total_lat"] / oldops[op]["count"]
+        newavglat = newops[op]["op_total_lat"] / newops[op]["count"]
+        diffavglat = ((newavglat / oldavglat) - 1.0) * 100.0
+
+        oldpctrun = (oldops[op]["op_total_lat"] / oldtotallat) * 100.0
+        newpctrun = (newops[op]["op_total_lat"] / newtotallat) * 100.0
+        diffpctrun = newpctrun - oldpctrun
+
+        oldabsrun = oldops[op]["op_total_lat"]
+        newabsrun = newops[op]["op_total_lat"]
+        diffabsrun = ((newabsrun / oldabsrun) - 1.0) * 100.0
+
+        #print oldops[op]["op_total_lat"] ", " newops[op]["op_total_lat"] ", " oldops[op]["count"] ", " newops[op]["count"]
+        printf "%-20s lat: %10.1f -> %10.1f (%s %7.1f %%), Runtime%%: %5.1f (%s %4.1f), AbsRuntime: %12.0f (%s %7.1f %%)\n", op, oldavglat, newavglat, (diffavglat < 0 ? "-": "+"), abs(diffavglat), newpctrun, (diffpctrun < 0 ? "-" : "+"), abs(diffpctrun), newabsrun, (diffabsrun < 0 ? "-" : "+"), abs(diffabsrun)
+    }
+}

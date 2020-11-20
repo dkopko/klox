@@ -1,0 +1,2 @@
+fun f(x,y) { return x+y; }
+print "XXXXXXXXXX" + f(f(f("a","b"), f("c","d")), f("e","f")); // expect: XXXXXXXXXXabcdef

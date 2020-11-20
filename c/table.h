@@ -1,54 +1,38 @@
-//> Hash Tables table-h
-#ifndef clox_table_h
-#define clox_table_h
+#ifndef klox_table_h
+#define klox_table_h
 
+#include "cb_integration.h"
 #include "common.h"
 #include "value.h"
-//> entry
 
 typedef struct {
-  ObjString* key;
-  Value value;
-} Entry;
-//< entry
-
-typedef struct {
-  int count;
-/* Hash Tables table-h < Optimization not-yet
-  int capacity;
-*/
-//> Optimization not-yet
-  int capacityMask;
-//< Optimization not-yet
-  Entry* entries;
+  cb_offset_t root_a;
+  cb_offset_t root_b;
+  cb_offset_t root_c;
 } Table;
 
-//> init-table-h
-void initTable(Table* table);
-//> free-table-h
-void freeTable(Table* table);
-//< free-table-h
-//> table-get-h
-bool tableGet(Table* table, ObjString* key, Value* value);
-//< table-get-h
-//> table-set-h
-bool tableSet(Table* table, ObjString* key, Value value);
-//< table-set-h
-//> table-delete-h
-bool tableDelete(Table* table, ObjString* key);
-//< table-delete-h
-//> table-add-all-h
-void tableAddAll(Table* from, Table* to);
-//< table-add-all-h
-//> table-find-string-h
-ObjString* tableFindString(Table* table, const char* chars, int length,
-                           uint32_t hash);
-//< table-find-string-h
-//> Garbage Collection not-yet
+void initTable(Table                *table,
+               cb_term_comparator_t  term_cmp,
+               cb_term_render_t      term_render);
 
-void tableRemoveWhite(Table* table);
+void freeTable(Table *table);
+
+bool tableGet(const Table *table, Value key, Value *value);
+
+bool tableSet(Table *table, Value key, Value value);
+
+bool tableDelete(Table *table, Value key);
+
+void tableAddAll(const Table *from, Table *to);
+
+OID<ObjString> tableFindString(Table      *table,
+                               cb_offset_t offset,
+                               const char *chars,
+                               int         length,
+                               uint32_t    hash);
+
 void grayTable(Table* table);
-//< Garbage Collection not-yet
 
-//< init-table-h
+void printTable(Table* table, const char *desc);
+
 #endif

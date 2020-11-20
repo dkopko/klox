@@ -1,0 +1,27 @@
+frame->slots  DONE
+* A pointer within the stack.
+* Essentially, the base pointer of a frame.
+* The next 'argCount' elements can be expected to be contiguous.
+* If we can presume that green threads would only get context switched at loop
+  or function boundaries, then the slots would naturally be contiguous, as they
+  all would have been initially pushed together (into the A region), or else
+  they would have been collected together (and exist contiguously in the B or
+  C regions).
+* The frame->slots assignment in vm.cpp:call() must ensure the slots are
+  mutable. This will be guaranteed by not allowing any context switches
+  except at loop or function boundaries.
+* The behavior of OP_RETURN: when returning to outer frames we must make sure
+  that the newly-current frame's slots will exist in the mutable A section
+  (to allow their mutability).  If this isn't already true, the slots must be
+  moved there and the tristack adjusted.
+
+vm.stackTop  DONE
+* Factored out into an independent "tristack" structure.
+
+ObjUpvalue::value  DONE
+* Modified to not use a pointer, but instead hold an index within the stack
+  or -1 (meaning it points to itself).
+
+vm.frames PARTIALLY DONE
+* Modified into a tristack-like structure.
+* NEEDED: Modify into a linked-list of array-of-frames.

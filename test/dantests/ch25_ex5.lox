@@ -1,0 +1,10 @@
+// http://craftinginterpreters.com/closures.html
+fun outer() {
+  var x = 1;
+  fun inner() {
+    print x; // (1)
+  }
+  inner();
+}
+
+outer();  // expect: 1

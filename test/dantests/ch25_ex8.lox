@@ -1,0 +1,10 @@
+// http://craftinginterpreters.com/closures.html
+fun outer() {
+  var x = "outside";
+  fun inner() {
+    print x;
+  }
+  inner();
+}
+
+outer(); // expect: outside

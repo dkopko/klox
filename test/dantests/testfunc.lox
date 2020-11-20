@@ -1,0 +1,2 @@
+fun sillyf(x,y) { return x+y; }
+print sillyf(3,4);  // expect: 7

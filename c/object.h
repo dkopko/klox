@@ -1,111 +1,53 @@
-//> Strings object-h
-#ifndef clox_object_h
-#define clox_object_h
+#ifndef klox_object_h
+#define klox_object_h
 
+#include "cb_integration.h"
 #include "common.h"
-//> Calls and Functions not-yet
 #include "chunk.h"
-//< Calls and Functions not-yet
-//> Classes and Instances not-yet
 #include "table.h"
-//< Classes and Instances not-yet
 #include "value.h"
-//> obj-type-macro
 
 #define OBJ_TYPE(value)         (AS_OBJ(value)->type)
-//< obj-type-macro
-//> is-string
 
-//> Methods and Initializers not-yet
 #define IS_BOUND_METHOD(value)  isObjType(value, OBJ_BOUND_METHOD)
-//< Methods and Initializers not-yet
-//> Classes and Instances not-yet
 #define IS_CLASS(value)         isObjType(value, OBJ_CLASS)
-//< Classes and Instances not-yet
-//> Closures not-yet
 #define IS_CLOSURE(value)       isObjType(value, OBJ_CLOSURE)
-//< Closures not-yet
-//> Calls and Functions not-yet
 #define IS_FUNCTION(value)      isObjType(value, OBJ_FUNCTION)
-//< Calls and Functions not-yet
-//> Classes and Instances not-yet
 #define IS_INSTANCE(value)      isObjType(value, OBJ_INSTANCE)
-//< Classes and Instances not-yet
-//> Calls and Functions not-yet
 #define IS_NATIVE(value)        isObjType(value, OBJ_NATIVE)
-//< Calls and Functions not-yet
 #define IS_STRING(value)        isObjType(value, OBJ_STRING)
-//< is-string
-//> as-string
 
-//> Methods and Initializers not-yet
-#define AS_BOUND_METHOD(value)  ((ObjBoundMethod*)AS_OBJ(value))
-//< Methods and Initializers not-yet
-//> Classes and Instances not-yet
-#define AS_CLASS(value)         ((ObjClass*)AS_OBJ(value))
-//< Classes and Instances not-yet
-//> Closures not-yet
-#define AS_CLOSURE(value)       ((ObjClosure*)AS_OBJ(value))
-//< Closures not-yet
-//> Calls and Functions not-yet
-#define AS_FUNCTION(value)      ((ObjFunction*)AS_OBJ(value))
-//< Calls and Functions not-yet
-//> Classes and Instances not-yet
-#define AS_INSTANCE(value)      ((ObjInstance*)AS_OBJ(value))
-//< Classes and Instances not-yet
-//> Calls and Functions not-yet
-#define AS_NATIVE(value)        (((ObjNative*)AS_OBJ(value))->function)
-//< Calls and Functions not-yet
-#define AS_STRING(value)        ((ObjString*)AS_OBJ(value))
-#define AS_CSTRING(value)       (((ObjString*)AS_OBJ(value))->chars)
-//< as-string
-//> obj-type
+#define AS_BOUND_METHOD_OID(value)  (OID<ObjBoundMethod>(AS_OBJ_ID(value)))
+#define AS_CLASS_OID(value)         (OID<ObjClass>(AS_OBJ_ID(value)))
+#define AS_CLOSURE_OID(value)       (OID<ObjClosure>(AS_OBJ_ID(value)))
+#define AS_FUNCTION_OID(value)      (OID<ObjFunction>(AS_OBJ_ID(value)))
+#define AS_INSTANCE_OID(value)      (OID<ObjInstance>(AS_OBJ_ID(value)))
+#define AS_UPVALUE_OID(value)      (OID<ObjUpvalue>(AS_OBJ_ID(value)))
+#define AS_NATIVE(value)        ((OID<ObjNative>(AS_OBJ_ID(value)).clip().cp())->function)
+#define AS_STRING_OID(value)        (OID<ObjString>(AS_OBJ_ID(value)))
 
 typedef enum {
-//> Methods and Initializers not-yet
   OBJ_BOUND_METHOD,
-//< Methods and Initializers not-yet
-//> Classes and Instances not-yet
   OBJ_CLASS,
-//< Classes and Instances not-yet
-//> Closures not-yet
   OBJ_CLOSURE,
-//< Closures not-yet
-//> Calls and Functions not-yet
   OBJ_FUNCTION,
-//< Calls and Functions not-yet
-//> Classes and Instances not-yet
   OBJ_INSTANCE,
-//< Classes and Instances not-yet
-//> Calls and Functions not-yet
   OBJ_NATIVE,
-//< Calls and Functions not-yet
   OBJ_STRING,
-//> Closures not-yet
   OBJ_UPVALUE
-//< Closures not-yet
 } ObjType;
-//< obj-type
 
 struct sObj {
   ObjType type;
-//> Garbage Collection not-yet
-  bool isDark;
-//< Garbage Collection not-yet
-//> next-field
-  struct sObj* next;
-//< next-field
+  OID<struct sObj> white_next;
 };
-//> Calls and Functions not-yet
 
 typedef struct {
   Obj obj;
   int arity;
-//> Closures not-yet
   int upvalueCount;
-//< Closures not-yet
   Chunk chunk;
-  ObjString* name;
+  OID<ObjString> name;
 } ObjFunction;
 
 typedef Value (*NativeFn)(int argCount, Value* args);
@@ -114,25 +56,19 @@ typedef struct {
   Obj obj;
   NativeFn function;
 } ObjNative;
-//< Calls and Functions not-yet
-//> obj-string
 
 struct sObjString {
   Obj obj;
   int length;
-  char* chars;
-//> Hash Tables obj-string-hash
+  CBO<char> chars; // char[]
   uint32_t hash;
-//< Hash Tables obj-string-hash
 };
-//< obj-string
-//> Closures not-yet
 
 typedef struct sUpvalue {
   Obj obj;
 
   // Pointer to the variable this upvalue is referencing.
-  Value* value;
+  int valueStackIndex;
 
   // If the upvalue is closed (i.e. the local variable it was pointing
   // to has been popped off the stack) then the closed-over value is
@@ -140,82 +76,53 @@ typedef struct sUpvalue {
   // point to this.
   Value closed;
 
-  // Open upvalues are stored in a linked list. This points to the next
-  // one in that list.
-  struct sUpvalue* next;
+  // Open upvalues are stored in a linked list. This points (via an OID lookup
+  // through the objtable) to the next one in that list.
+  OID<struct sUpvalue> next;
 } ObjUpvalue;
 
 typedef struct {
   Obj obj;
-  ObjFunction* function;
-  ObjUpvalue** upvalues;
+  OID<ObjFunction> function;
+  CBO<OID<ObjUpvalue> > upvalues;  //pointer to ObjUpvalue[] (used to be type ObjUpvalue**).
   int upvalueCount;
 } ObjClosure;
-//< Closures not-yet
-//> Classes and Instances not-yet
 
 typedef struct sObjClass {
   Obj obj;
-  ObjString* name;
-//> Superclasses not-yet
-  struct sObjClass* superclass;
-//< Superclasses not-yet
-//> Methods and Initializers not-yet
-  Table methods;
-//< Methods and Initializers not-yet
+  OID<ObjString> name;
+  OID<struct sObjClass> superclass;  //struct sObjClass* (only pointer, not array).
+  struct structmap methods_sm;
 } ObjClass;
 
 typedef struct {
   Obj obj;
-  ObjClass* klass;
-  Table fields;
+  OID<ObjClass> klass;
+  struct structmap fields_sm;
 } ObjInstance;
-//< Classes and Instances not-yet
 
-//> Methods and Initializers not-yet
 typedef struct {
   Obj obj;
   Value receiver;
-  ObjClosure* method;
+  OID<ObjClosure> method;
 } ObjBoundMethod;
 
-ObjBoundMethod* newBoundMethod(Value receiver, ObjClosure* method);
-//< Methods and Initializers not-yet
-/* Classes and Instances not-yet < Superclasses not-yet
-ObjClass* newClass(ObjString* name);
-*/
-//> Superclasses not-yet
-ObjClass* newClass(ObjString* name, ObjClass* superclass);
-//< Superclasses not-yet
-//> Closures not-yet
-ObjClosure* newClosure(ObjFunction* function);
-//< Closures not-yet
-//> Calls and Functions not-yet
-ObjFunction* newFunction();
-//< Calls and Functions not-yet
-//> Classes and Instances not-yet
-ObjInstance* newInstance(ObjClass* klass);
-//< Classes and Instances not-yet
-//> Calls and Functions not-yet
-ObjNative* newNative(NativeFn function);
-//< Calls and Functions not-yet
-//> take-string-h
-ObjString* takeString(char* chars, int length);
-//< take-string-h
-//> copy-string-h
-ObjString* copyString(const char* chars, int length);
+OID<ObjBoundMethod> newBoundMethod(Value receiver, OID<ObjClosure> method);
+OID<ObjClass> newClass(OID<ObjString> name);
+OID<ObjClosure> newClosure(OID<ObjFunction> function);
+OID<ObjFunction> newFunction();
+OID<ObjInstance> newInstance(OID<ObjClass> klass);
+OID<ObjNative> newNative(NativeFn function);
+OID<ObjString> rawAllocateString(const char* chars, int length);
+OID<ObjString> takeString(CBO<char> /*char[]*/ chars, int length);
+OID<ObjString> copyString(const char* chars, int length);
 
-//< copy-string-h
-//> Closures not-yet
-ObjUpvalue* newUpvalue(Value* slot);
-//< Closures not-yet
-//> print-object-h
-void printObject(Value value);
-//< print-object-h
-//> is-obj-type
+OID<ObjUpvalue> newUpvalue(unsigned int valueStackIndex);
+void printObject(ObjID id, cb_offset_t offset, const Obj *obj, bool pretty);
+void printObjectValue(Value value, bool pretty);
+
 static inline bool isObjType(Value value, ObjType type) {
   return IS_OBJ(value) && AS_OBJ(value)->type == type;
 }
 
-//< is-obj-type
 #endif

@@ -1,0 +1,138 @@
+object.h: ObjUpvalue
+* An Obj-derived struct which hold 3 things:
+  1) a pointer to a destination value used when the upvalue is "open",
+     FIXME- this will need to become an index into a struct, or some other alternative, as
+       we migrate out of direct pointer usages towards structmap dereferences? 
+  2) a storage location for copying the desination value to upon the "closing"
+     of this upvalue, and for access subsequent to this "closing".
+  3) an intrusive linkage field to make a singly-linked-list of upvalues, used
+     as upvalues are accumulated in the running VM.
+
+object.h: ObjClosure
+* An Obj-derived struct which holds 3 things:
+  1) an ObjFunction reference,
+  2) a reference to an array of ObjUpvalues,
+  3) a count of the size of the ObjUpvalues array.
+
+object.h: ObjFunction
+* An Obj-derived struct which holds 4 things:
+  1) Its arity,
+  2) Its count of upvalues,
+  3) Its chunk (of code),
+  4) Its name.
+* Functions have their upvalueCount increased as namedVariable() resolutions
+  ultimately find the requested variable name in enclosing scopes (instead of
+  the local scope).
+
+object.cpp: CBO<ObjClosure> newClosure(CBO<ObjFunction> function)
+* Creates an array of ObjUpvalues, based on the upvalueCount of the passed-in
+  function.
+* An ObjClosure is created in interpret(), to wrap the initial anonymous
+  function.
+* ObjClosures are created to wrap internal (non-native) functions with any
+  upvalues they need.  All internal functions (even those that don't reference
+  any upvalues) will be wrapped with an ObjClosure (room for optimization?).
+* ObjClosures are one of only 4 things which may be invoked through
+  vm.cpp:call() :
+  1) Bound methods,
+  2) Classes,
+  3) Closures,
+  4) Native functions.
+
+object.cpp: CBO<ObjUpvalue> newUpvalue(Value* slot)
+* ObjUpvalues are created at runtime by vm.cpp:captureUpvalue(), which itself
+  is called by the OP_CLOSURE instruction.  This instruction expects subsequent
+  operands of as many upvalues as the closure's function has upvalues, and for
+  upvalues which are local (isLocal==true), it will newly capture them.
+  OP_CLOSURE is emitted for compiled functions to enclose any environment they
+  may need (or none, if the function uses no upvalues).
+
+vm.cpp: static CBO<ObjUpvalue> captureUpvalue(Value* local)
+* Captures the local variable [local] into an [Upvalue]. If that local
+  is already in an upvalue, the existing one is used. (This is
+  important to ensure that multiple closures closing over the same
+  variable actually see the same variable.) Otherwise, it creates a
+  new open upvalue and prepends it to the VM's singly-linked list of upvalues.
+* Upvalues are "captured" when OP_CLOSURE is executed.
+
+vm.cpp: static void closeUpvalues(Value* last)
+* Iterates all of the "open upvalues" (ObjUpvalue structures held in a
+  linked-list in the vm.openUpvalues variable) which are at or higher in the
+  stack than 'last', and copies each's destination value's contents into a
+  storage field held by the ObjUpvalue itself.
+* Destinations (i.e. 'last' arguments) are always stack locations.
+* Called as an effect of OP_CLOSE_UPVALUE, to "close" the value of the top of stack.
+* Called as an effect of OP_RETURN, to "close" any and all elements of the
+  stack which comprise the present frame's slots and which may have had
+  upvalue references stored to them elsewhere.  (frame->slots is itself a
+  pointer within the stack).
+
+chunk.h: OP_GET_UPVALUE
+* Takes a 1-byte slot operand
+* Pushes onto the stack the value of the frame's closure's upvalue of that slot index.
+* This op is emitted when a named value being compiled by compiler.cpp:namedValue()
+  is not found in locals, but is found as an upvalue.
+
+chunk.h: OP_SET_UPVALUE
+* Takes a 1-byte slot operand
+* Sets the value of the frame's closure's upvalue of that slot index to the value at the top of the stack.
+* This op is emitted when a named value being compiled by compiler.cpp:namedValue()
+  is not found in locals, but is found as an upvalue.
+
+chunk.h: OP_CLOSE_UPVALUE
+* "Closes" the value of the top of the stack and pops it, as in, it copies the
+  value of the top of the stack into an ObjUpvalue location for preservation.
+* Emitted by endScope() for each Local in the current Compiler's Local list for
+  which isUpvalue == true.
+
+chunk.h: OP_CLOSURE
+* This op means "Create a closure of the operand (which is a function)".
+* The VM machine expects after the function operand to find
+  2 * (function's upvalue count) subsequent bytes.  The bytes come in pairs
+  which describe the following properties of the upvalue:
+    whether or not the variable is local to the present frame's slots (1 byte)
+    index of the upvalue (into either slots (for local) or frame's closure's upvalues array (for non-local)) (1 byte)
+* Each of these upvalue descriptions is iterated...
+  "Local" upvalues are newly "captured" and stored into the new closure's upvalues from the present frame's slots,
+  "non-local" upvalues are copied into the new closure's upvalues from the frame's closure's upvalues.
+* Emitted by compiler.cpp:function() after the function has been compiled, to
+  cause the VM to capture any accumulated upvalues of the function into a
+  closure (which seems to be an encapsulation of a function + its upvalues).
+
+chunk.h: OP_RETURN
+* This op ends the life of the present frame, and preserves any of its slot
+  contents in referring upvalues.
+* This op is emitted for return statements, for ending compilation of a
+  function, and for ending compilation of the anonymous function which
+  represents the whole source-file (via endCompiler() call within compile()).
+
+compiler.cpp: Upvalue::isLocal
+* Whether the captured variable is a local or upvalue in the enclosing function.
+
+compiler.cpp: Local::isUpvalue
+* Whether this local variable is captured as an upvalue by a function.
+* Initially set to false, but gets set to true when 
+
+compiler.cpp:static int addUpvalue(Compiler* compiler, uint8_t index, bool isLocal)
+* Adds an upvalue to [compiler]'s function with the given properties.
+  Does not add one if an upvalue for that variable is already in the
+  list. Returns the index of the upvalue.
+* This is called during the resolution of upvalue targets in resolveUpvalue(),
+  if the target has been found.
+
+compiler.cpp: static int resolveUpvalue(Compiler* compiler, Token* name)
+* Attempts to look up [name] in the functions enclosing the one being
+  compiled by [compiler]. If found, it adds an upvalue for it to this
+  compiler's list of upvalues (unless it's already in there) and
+  returns its index. If not found, returns -1.
+  If the name is found outside of the immediately enclosing function,
+  this will flatten the closure and add upvalues to all of the
+  intermediate functions so that it gets walked down to this one.
+* For functions which have upvalues of locals several enclosing function
+  levels up, the "upvalueness" will be stated in all intervening functions.
+  i.e. All intervening functions between the upvalue user and the upvalue
+  target definer will have stated that they have upvalues to the same target.
+* This is called in an attempt to resolve variable names in
+  compiler.cpp:namedVariable().  It may find no such named variable in
+  enclosing functions' scopes, at which point the variable name to be resolved
+  will be considered as if a global variable.

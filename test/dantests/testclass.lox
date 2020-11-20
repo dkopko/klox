@@ -1,0 +1,16 @@
+class Poo {
+    fn1(a,b) { return a+b; }
+    fn2(c,d) { return c*d; }
+}
+
+class Turd < Poo {
+    fn3(a,b) { return a-b; }
+    fn4(c,d) { return c/d; }
+}
+
+var t = Turd();
+print t.fn1("abc","123");  // expect: abc123
+print t.fn2(2,3);  // expect: 6
+print t.fn3(5,2);  // expect: 3
+print t.fn4(9,2);  // expect: 4.5
+

@@ -1,0 +1,92 @@
+Equivalents of these ten functions are needed to port to AMTs:
+
+
+1) 
+bool
+cb_bst_contains_key(const struct cb      *cb,
+                    cb_offset_t           header_offset,
+                    const struct cb_term *key);
+2) 
+size_t
+cb_bst_external_size(const struct cb *cb,
+                     cb_offset_t      header_offset);
+
+3)
+int
+cb_bst_external_size_adjust(struct cb   *cb,
+                            cb_offset_t  header_offset,
+                            ssize_t      adjustment);
+
+4)
+int                                                                             
+cb_bst_init(struct cb               **cb,                                       
+            struct cb_region         *region,                                   
+            cb_offset_t              *new_header_offset_out,                    
+            cb_term_comparator_t      key_term_cmp,                             
+            cb_term_comparator_t      value_term_cmp,                           
+            cb_term_render_t          key_term_render,                          
+            cb_term_render_t          value_term_render,                        
+            cb_term_external_size_t   key_term_external_size,                   
+            cb_term_external_size_t   value_term_external_size);
+
+
+5)
+int                                                                             
+cb_bst_insert(struct cb            **cb,                                        
+              struct cb_region      *region,                                    
+              cb_offset_t           *header_offset,                             
+              cb_offset_t            cutoff_offset,                             
+              const struct cb_term  *key,                                       
+              const struct cb_term  *value);                                    
+int                                                                             
+cb_structmap_insert(struct cb      **cb,                                        
+                    cb_offset_t     *root_node_offset,                          
+                    cb_offset_t      cutoff_offset,                             
+                    cb_struct_id_t   struct_id,                                 
+                    cb_offset_t      struct_offset);      
+
+
+
+6)
+size_t                                                                          
+cb_bst_internal_size(const struct cb *cb,                                       
+                     cb_offset_t      header_offset);   
+
+7)  DONE
+int                                                                             
+cb_bst_lookup(const struct cb      *cb,                                         
+              cb_offset_t           header_offset,                              
+              const struct cb_term *key,                                        
+              struct cb_term       *value); 
+int                                                                             
+cb_structmap_lookup(const struct cb *cb,                                        
+                    cb_offset_t      root_node_offset,                          
+                    cb_struct_id_t   struct_id,                                 
+                    cb_offset_t     *struct_offset);   
+
+8)
+unsigned int                                                                    
+cb_bst_num_entries(const struct cb *cb,                                         
+                   cb_offset_t      header_offset);
+
+
+9)  DONE
+size_t                                                                          
+cb_bst_size(const struct cb *cb,                                                
+            cb_offset_t      header_offset);
+size_t                                                                          
+cb_structmap_size(const struct cb *cb,                                          
+                  cb_offset_t      root_node_offset);   
+
+
+
+10)
+int                                                                             
+cb_bst_traverse(const struct cb        *cb,                                     
+                cb_offset_t             header_offset,                          
+                cb_bst_traverse_func_t  func,                                   
+                void                   *closure);   
+
+
+
+

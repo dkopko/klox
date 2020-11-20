@@ -1,0 +1,11 @@
+// http://craftinginterpreters.com/closures.html
+fun outer() {
+  var x = "before";
+  fun inner() {
+    x = "assigned";
+  }
+  inner();
+  print x;
+}
+
+outer();  // expect: assigned

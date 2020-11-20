@@ -1,0 +1,13 @@
+// http://craftinginterpreters.com/closures.html
+
+fun makeClosure() {
+  var local = "local";
+  fun closure() {
+    print local;
+  }
+  return closure;
+}
+
+var closure = makeClosure();
+closure();  // expect: local
+

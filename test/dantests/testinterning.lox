@@ -1,0 +1,5 @@
+fun f(x,y) { return "A"+"BC"; }
+fun g(x) { f(1, 2) ; return 5; }
+print g(0);  // expect: 5
+print g(0);  // expect: 5
+print g(0);  // expect: 5

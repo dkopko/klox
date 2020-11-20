@@ -1,0 +1,13 @@
+// http://craftinginterpreters.com/closures.html
+
+fun makeClosure(value) {
+  fun closure() {
+    print value;
+  }
+  return closure;
+}
+
+var doughnut = makeClosure("doughnut");
+var bagel = makeClosure("bagel");
+doughnut();  // expect: doughnut
+bagel();     // expect: bagel
