@@ -716,10 +716,7 @@ void freezeARegions(cb_offset_t new_lower_bound) {
   assert(on_main_thread);
 
   // Objtable
-  //assert(cb_bst_num_entries(thread_cb, thread_objtable.root_c) == 0); //FIXME restore this check
-  thread_objtable.sm_c = thread_objtable.sm_b;
-  thread_objtable.sm_b = thread_objtable.sm_a;
-  objtable_layer_init(&(thread_objtable.sm_a));
+  objtable_freeze(&thread_objtable);
 
   // Tristack
   assert(vm.tristack.cbo == CB_NULL);
