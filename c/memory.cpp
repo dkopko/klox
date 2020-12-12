@@ -1037,14 +1037,10 @@ void collectGarbage() {
   rr.mp()->req.exec_phase                = exec_phase;
 
   // Prepare condensing objtable B+C
-  size_t objtable_b_size = structmap_size(&(thread_objtable.sm_b)) + structmap_modification_size();
-  size_t objtable_c_size = structmap_size(&(thread_objtable.sm_c)) + structmap_modification_size();
-  KLOX_TRACE("objtable_b_size: %zu, objtable_c_size: %zu\n",
-         objtable_b_size, objtable_c_size);
   ret = logged_region_create(&thread_cb,
                              &tmp_region,
                              pagesize,
-                             objtable_b_size + objtable_c_size,
+                             objtable_consolidation_size(&thread_objtable),
                              CB_REGION_FINAL);
   assert(ret == 0);
   rr.mp()->req.objtable_new_region = tmp_region;

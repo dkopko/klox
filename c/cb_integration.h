@@ -254,6 +254,7 @@ cb_offset_t objtable_lookup_C(ObjTable *obj_table, ObjID obj_id);
 void objtable_invalidate(ObjTable *obj_table, ObjID obj_id);
 void objtable_external_size_adjust_A(ObjTable *obj_table, ssize_t adjustment);
 void objtable_freeze(ObjTable *obj_table);
+size_t objtable_consolidation_size(ObjTable *obj_table);
 
 
 #define CB_NULL_OID ((ObjID) { 0 })

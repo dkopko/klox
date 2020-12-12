@@ -399,6 +399,15 @@ objtable_freeze(ObjTable *obj_table)
   objtable_layer_init(&(obj_table->sm_a));
 }
 
+size_t
+objtable_consolidation_size(ObjTable *obj_table)
+{
+  size_t objtable_b_size = structmap_size(&(obj_table->sm_b));
+  size_t objtable_c_size = structmap_size(&(obj_table->sm_c));
+  KLOX_TRACE("objtable_b_size: %zu, objtable_c_size: %zu\n",
+         objtable_b_size, objtable_c_size);
+  return objtable_b_size + objtable_c_size + structmap_modification_size();
+}
 
 cb_offset_t
 resolveAsMutableLayer(ObjID objid)
