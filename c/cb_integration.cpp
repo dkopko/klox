@@ -385,6 +385,12 @@ objtable_invalidate(ObjTable *obj_table, ObjID obj_id)
   assert(ret == 0);
 }
 
+void
+objtable_external_size_adjust_A(ObjTable *obj_table, ssize_t adjustment)
+{
+    structmap_external_size_adjust(&(obj_table->sm_a), adjustment);
+}
+
 cb_offset_t
 resolveAsMutableLayer(ObjID objid)
 {

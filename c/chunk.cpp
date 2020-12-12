@@ -42,8 +42,8 @@ void writeChunk(OID<Obj> f, uint8_t byte, int line) {
     // in the objtable (it is held by an ObjFunction, which is held in the
     // objtable), we must manually inform the objtable of this independent
     // mutation of external size.
-    structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                   (newCapacity - oldCapacity) * (sizeof(uint8_t) + sizeof(int)));
+    objtable_external_size_adjust_A(&thread_objtable,
+                                    (newCapacity - oldCapacity) * (sizeof(uint8_t) + sizeof(int)));
   }
 
   ObjFunction *mfun = (ObjFunction *)f.mlip().mp();
@@ -81,8 +81,8 @@ int addConstant(OID<Obj> f, Value value) {
     // in the objtable (it is held by an ObjFunction, which is held in the
     // objtable), we must manually inform the objtable of this independent
     // mutation of external size.
-    structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                   (newCapacity - oldCapacity) * sizeof(Value));
+    objtable_external_size_adjust_A(&thread_objtable,
+                                    (newCapacity - oldCapacity) * sizeof(Value));
   }
 
   ObjFunction *mfun = (ObjFunction *)f.mlip().mp();
