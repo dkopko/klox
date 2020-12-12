@@ -391,6 +391,16 @@ objtable_external_size_adjust_A(ObjTable *obj_table, ssize_t adjustment)
     structmap_external_size_adjust(&(obj_table->sm_a), adjustment);
 }
 
+void
+objtable_freeze(ObjTable *obj_table)
+{
+  //assert(num_entries(obj_table->sm_c) == 0); //FIXME create this check
+  obj_table->sm_c = obj_table->sm_b;
+  obj_table->sm_b = obj_table->sm_a;
+  objtable_layer_init(&(obj_table->sm_a));
+}
+
+
 cb_offset_t
 resolveAsMutableLayer(ObjID objid)
 {
