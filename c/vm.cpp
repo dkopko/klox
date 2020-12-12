@@ -443,8 +443,8 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   // oversize the objtable, as the update of the size of the fields_sm this
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  structmap_modification_size()));
 
   size_t size_before = structmap_size(&(instanceA.cp()->fields_sm));
 
@@ -464,11 +464,11 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   //NOTE: Because this field addition is done to an ObjInstance already present
   // in the objtable, we must manually inform the objtable of this independent
   // mutation of external size.
-  structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                 (ssize_t)size_after - (ssize_t)size_before);
+  objtable_external_size_adjust_A(&thread_objtable,
+                                  (ssize_t)size_after - (ssize_t)size_before);
 
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 - (ssize_t)structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  - (ssize_t)structmap_modification_size()));
 
 }
 
@@ -503,8 +503,8 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   // oversize the objtable, as the update of the size of the methods_bst this
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  structmap_modification_size()));
 
   size_t size_before = structmap_size(&(classA.cp()->methods_sm));
 
@@ -524,11 +524,11 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   //NOTE: Because this method addition is done to an ObjClass already present
   // in the objtable, we must manually inform the objtable of this independent
   // mutation of external size.
-  structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                 size_after - size_before);
+  objtable_external_size_adjust_A(&thread_objtable,
+                                  size_after - size_before);
 
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 - (ssize_t)structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  - (ssize_t)structmap_modification_size()));
 }
 
 static int
@@ -543,8 +543,8 @@ structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
   // oversize the objtable, as the update of the size of the methods bst this
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  structmap_modification_size()));
 
   size_t size_before = structmap_size(dest_sm);
 
@@ -556,11 +556,11 @@ structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
   assert(ret == 0);
 
   size_t size_after = structmap_size(dest_sm);
-  structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                 (ssize_t)size_after - (ssize_t)size_before);
+  objtable_external_size_adjust_A(&thread_objtable,
+                                  (ssize_t)size_after - (ssize_t)size_before);
 
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 - (ssize_t)structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  - (ssize_t)structmap_modification_size()));
   return 0;
 }
 
