@@ -812,26 +812,26 @@ void printStateOfWorld(const char *desc) {
   KLOX_TRACE("===== BEGIN STATE OF WORLD %s (gc: %d) =====\n", desc, gciteration);
 
   KLOX_TRACE("----- begin objtable (a:%ju, asz:%zu, b:%ju, bsz:%zu, c:%ju, csz:%zu)-----\n",
-             thread_objtable.sm_a.root_node_offset,
-             structmap_size(&(thread_objtable.sm_a)),
-             thread_objtable.sm_b.root_node_offset,
-             structmap_size(&(thread_objtable.sm_b)),
-             thread_objtable.sm_c.root_node_offset,
-             structmap_size(&(thread_objtable.sm_c)));
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           &(thread_objtable.sm_a),
-                           &printObjtableTraversal,
-                           (void*)"A");
+             thread_objtable.a.sm.root_node_offset,
+             objtable_layer_size(&(thread_objtable.a)),
+             thread_objtable.b.sm.root_node_offset,
+             objtable_layer_size(&(thread_objtable.b)),
+             thread_objtable.c.sm.root_node_offset,
+             objtable_layer_size(&(thread_objtable.c)));
+  ret = objtable_layer_traverse((const struct cb **)&thread_cb,
+                                &(thread_objtable.a),
+                                &printObjtableTraversal,
+                                (void*)"A");
   assert(ret == 0);
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           &(thread_objtable.sm_b),
-                           &printObjtableTraversal,
-                           (void*)"B");
+  ret = objtable_layer_traverse((const struct cb **)&thread_cb,
+                                &(thread_objtable.b),
+                                &printObjtableTraversal,
+                                (void*)"B");
   assert(ret == 0);
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           &(thread_objtable.sm_c),
-                           &printObjtableTraversal,
-                           (void*)"C");
+  ret = objtable_layer_traverse((const struct cb **)&thread_cb,
+                                &(thread_objtable.c),
+                                &printObjtableTraversal,
+                                (void*)"C");
   assert(ret == 0);
   KLOX_TRACE("----- end objtable -----\n");
 
@@ -1045,8 +1045,8 @@ void collectGarbage() {
   assert(ret == 0);
   rr.mp()->req.objtable_new_region = tmp_region;
   assert(cb_region_start(&(rr.cp()->req.objtable_new_region)) >= new_lower_bound);
-  rr.mp()->req.objtable_sm_b = thread_objtable.sm_b;
-  rr.mp()->req.objtable_sm_c = thread_objtable.sm_c;
+  objtable_layer_assign(&(rr.mp()->req.objtable_b), &(thread_objtable.b));
+  objtable_layer_assign(&(rr.mp()->req.objtable_c), &(thread_objtable.c));
 
   // Prepare condensing tristack B+C
   size_t tristack_b_plus_c_size = sizeof(Value) * (vm.tristack.abi - vm.tristack.cbi);
@@ -1220,12 +1220,12 @@ void integrateGCResponse(struct gc_request_response *rr) {
   }
 
   //Integrate condensed objtable.
-  KLOX_TRACE("objtable C %ju -> %ju\n", (uintmax_t)thread_objtable.sm_c.root_node_offset, (uintmax_t)0);
-  KLOX_TRACE("objtable B %ju -> %ju\n", (uintmax_t)thread_objtable.sm_b.root_node_offset, (uintmax_t)rr->resp.objtable_new_sm_b.root_node_offset);
-  objtable_layer_init(&(thread_objtable.sm_c));
-  thread_objtable.sm_b = rr->resp.objtable_new_sm_b;
-  assert(thread_objtable.sm_b.root_node_offset == CB_NULL || thread_objtable.sm_b.root_node_offset >= rr->req.new_lower_bound);
-  assert(thread_objtable.sm_a.root_node_offset == CB_NULL || thread_objtable.sm_a.root_node_offset >= rr->req.new_lower_bound);
+  KLOX_TRACE("objtable C %ju -> %ju\n", (uintmax_t)thread_objtable.c.sm.root_node_offset, (uintmax_t)0);
+  KLOX_TRACE("objtable B %ju -> %ju\n", (uintmax_t)thread_objtable.b.sm.root_node_offset, (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
+  objtable_layer_init(&(thread_objtable.c));
+  objtable_layer_assign(&(thread_objtable.b), &(rr->resp.objtable_new_b));
+  assert(thread_objtable.b.sm.root_node_offset == CB_NULL || thread_objtable.b.sm.root_node_offset >= rr->req.new_lower_bound);
+  assert(thread_objtable.a.sm.root_node_offset == CB_NULL || thread_objtable.a.sm.root_node_offset >= rr->req.new_lower_bound);
 
   //Integrate condensed tristack.
   KLOX_TRACE("before condensing tristack\n");

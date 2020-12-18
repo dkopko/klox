@@ -233,14 +233,50 @@ struct CBO
 
 typedef struct { uint64_t id; } ObjID;
 
+typedef struct ObjTableLayer {
+  struct structmap sm;
+} ObjTableLayer;
+
 typedef struct ObjTable {
-  struct structmap sm_a;
-  struct structmap sm_b;
-  struct structmap sm_c;
-  ObjID next_obj_id;
+  ObjTableLayer a;
+  ObjTableLayer b;
+  ObjTableLayer c;
+  ObjID         next_obj_id;
 } ObjTable;
 
-int objtable_layer_init(struct structmap *sm);
+int objtable_layer_init(ObjTableLayer *layer);
+int objtable_layer_assign(ObjTableLayer *dest, ObjTableLayer *src);
+
+typedef int (*objtable_layer_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
+int objtable_layer_traverse(const struct cb                **cb,
+                            ObjTableLayer                   *layer,
+                            objtable_layer_traverse_func_t   func,
+                            void                            *closure);
+
+size_t objtable_layer_external_size(ObjTableLayer *layer);
+size_t objtable_layer_internal_size(ObjTableLayer *layer);
+size_t objtable_layer_size(ObjTableLayer *layer);
+void objtable_layer_external_size_adjust(ObjTableLayer *layer, ssize_t adjustment);
+// NOTE: The following is used to pre-align a region's cursor before an
+// objtable_layer_insert() in copy_objtable_b() and copy_objtable_c_not_in_b()
+// for the sake of accurately tracking in Debug builds how much of the region is
+// being consumed by that insertion.
+extern inline size_t objtable_layer_insertion_alignment_get() { return 8; }
+
+
+int
+objtable_layer_insert(struct cb        **cb,
+                      struct cb_region  *region,
+                      ObjTableLayer     *layer,
+                      uint64_t           key,
+                      uint64_t           value);
+
+bool
+objtable_layer_lookup(const struct cb *cb,
+                      ObjTableLayer   *layer,
+                      uint64_t         key,
+                      uint64_t        *value);
+
 int methods_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm);
 int fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm);
 
@@ -408,8 +444,8 @@ struct gc_request
 
   //Objtable
   struct cb_region  objtable_new_region;
-  struct structmap  objtable_sm_b;
-  struct structmap  objtable_sm_c;
+  ObjTableLayer     objtable_b;
+  ObjTableLayer     objtable_c;
 
   //Tristack
   struct cb_region  tristack_new_region;
@@ -452,7 +488,7 @@ struct gc_request
 
 struct gc_response
 {
-  struct structmap  objtable_new_sm_b;
+  ObjTableLayer objtable_new_b;
 
   cb_offset_t  tristack_new_bbo; // B base offset
   unsigned int tristack_new_bbi; // B base index (always 0, really)
