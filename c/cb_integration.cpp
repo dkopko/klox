@@ -258,15 +258,43 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 
 }
 
+extern inline uint64_t
+hash_key(uint64_t key) {
+  return key;
+}
+
+extern inline ObjTableLayerEntry*
+objtable_layer_sparse_entry(ObjTableLayer *layer, uint64_t hashval) {
+  return &(layer->sparse[hashval & (SPARSE_SIZE-1)]);
+}
+
 int
 objtable_layer_init(ObjTableLayer *layer) {
   structmap_init(&(layer->sm), &klox_allocation_size);
+  layer->num_dense_entries = 0;
+  layer->dense_external_size = 0;
   return 0;
 }
 
 int
 objtable_layer_assign(ObjTableLayer *dest, ObjTableLayer *src) {
+  *dest = *src;
+
+#if 0
   dest->sm = src->sm;
+
+  for (unsigned int i = 0, e = src->num_dense_entries; i < e; ++i) {
+    uint64_t key = src->dense[i];
+    ObjTableLayerEntry *entry = objtable_layer_sparse_entry(src, hash_key(key));
+    uint64_t value = entry->value;
+
+    assert(entry->n == i);
+
+    objtable_layer_insert(NULL, NULL, dest, key, value);
+  }
+  dest->num_dense_entries = src->num_dense_entries;
+#endif
+
   return 0;
 }
 
@@ -279,6 +307,18 @@ objtable_layer_traverse(const struct cb                **cb,
 
   (void) ret;
 
+  // Traverse the dense entries.
+  for (unsigned int i = 0, e = layer->num_dense_entries; i < e; ++i) {
+    uint64_t key = layer->dense[i];
+    ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, hash_key(key));
+    uint64_t value = entry->value;
+
+    assert(entry->n == i);
+
+    func(key, value, closure);
+  }
+
+  // Traverse the structmap entries.
   ret = structmap_traverse(cb,
                            &(layer->sm),
                            (structmap_traverse_func_t)func,
@@ -290,7 +330,7 @@ objtable_layer_traverse(const struct cb                **cb,
 
 size_t
 objtable_layer_external_size(ObjTableLayer *layer) {
-  return structmap_external_size(&(layer->sm));
+  return structmap_external_size(&(layer->sm)) + layer->dense_external_size;
 }
 
 size_t
@@ -300,7 +340,7 @@ objtable_layer_internal_size(ObjTableLayer *layer) {
 
 size_t
 objtable_layer_size(ObjTableLayer *layer) {
-  return structmap_size(&(layer->sm));
+  return structmap_size(&(layer->sm)) + layer->dense_external_size;
 }
 
 size_t
@@ -313,8 +353,66 @@ void
 objtable_layer_external_size_adjust(ObjTableLayer *layer,
                                     ssize_t        adjustment)
 {
+  //FIXME WTF to do here?
   structmap_external_size_adjust(&(layer->sm), adjustment);
 }
+
+
+
+#if 0
+
+add-member(i):
+    dense[n] = i
+    sparse[i] = n
+    n++
+
+is-member(i):
+    return sparse[i] < n && dense[sparse[i]] == i
+
+------------------
+
+add(k, v):
+    dense[n] = k
+    sparse[hash(k)].n = n
+    sparse[hash(k)].val = v
+    n++
+
+contains(k):
+    return sparse[hash(k)].n < n && dense[sparse[hash(k)].n] == k
+
+get(k):
+    if (!contains(k)) return 0;
+    return sparse[hash(k)].val;
+
+----------------------
+
+add(k, v):
+    if (n < 1000) {
+      uint64_t keyhash = hash_key(k);
+      ObjTableLayerEntry *entry = objtable_layer_sparse_entry(keyhash);
+
+      bool sparse_entry_already_used = entry->n < n && entry == objtable_layer_sparse_entry(hash_key(dense[entry->n]))
+
+      if (!sparse_entry_already_used) {
+        dense[n] = k
+        entry->n = n
+        entry->val = v
+        n++
+        return;
+      }
+    }
+    insert in sm;
+
+get(k):
+    uint64_t keyhash = hash_key(k);
+    ObjTableLayerEntry *entry = objtable_layer_sparse_entry(keyhash);
+    if (entry->n < n && dense[entry->n] == k) {
+      return entry->val;
+    }
+    get from sm;
+
+#endif
+
 
 int
 objtable_layer_insert(struct cb        **cb,
@@ -323,6 +421,23 @@ objtable_layer_insert(struct cb        **cb,
                       uint64_t           key,
                       uint64_t           value)
 {
+  unsigned int n = layer->num_dense_entries;
+
+  if (n < 1000) {
+      uint64_t keyhash = hash_key(key);
+      ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, keyhash);
+
+      bool already_used = entry->n < n && entry == objtable_layer_sparse_entry(layer, hash_key(layer->dense[entry->n]));
+      if (!already_used) {
+        layer->dense[n] = key;
+        entry->n = n;
+        entry->value = value;
+        layer->num_dense_entries++;
+        layer->dense_external_size += klox_allocation_size(*cb, value);
+        return 0;
+      }
+  }
+
   return structmap_insert(cb, region, &(layer->sm), key, value);
 }
 
@@ -332,6 +447,13 @@ objtable_layer_lookup(const struct cb *cb,
                       uint64_t         key,
                       uint64_t        *value)
 {
+  uint64_t keyhash = hash_key(key);
+  ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, keyhash);
+  if (entry->n < layer->num_dense_entries && layer->dense[entry->n] == key) {
+    *value = entry->value;
+    return true;
+  }
+
   return structmap_lookup(cb, &(layer->sm), key, value);
 }
 
