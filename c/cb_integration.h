@@ -283,11 +283,31 @@ objtable_layer_insert(struct cb        **cb,
                       uint64_t           key,
                       uint64_t           value);
 
-bool
+extern inline uint64_t
+hash_key(uint64_t key) {
+  return key;
+}
+
+extern inline ObjTableLayerEntry*
+objtable_layer_sparse_entry(ObjTableLayer *layer, uint64_t hashval) {
+  return &(layer->sparse[hashval & (SPARSE_SIZE-1)]);
+}
+
+extern inline bool
 objtable_layer_lookup(const struct cb *cb,
                       ObjTableLayer   *layer,
                       uint64_t         key,
-                      uint64_t        *value);
+                      uint64_t        *value)
+{
+  ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, hash_key(key));
+  if (entry->n < layer->num_dense_entries && layer->dense[entry->n] == key) {
+    *value = entry->value;
+    return true;
+  }
+
+  return structmap_lookup(cb, &(layer->sm), key, value);
+}
+
 
 int methods_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm);
 int fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm);

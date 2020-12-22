@@ -258,16 +258,6 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 
 }
 
-extern inline uint64_t
-hash_key(uint64_t key) {
-  return key;
-}
-
-extern inline ObjTableLayerEntry*
-objtable_layer_sparse_entry(ObjTableLayer *layer, uint64_t hashval) {
-  return &(layer->sparse[hashval & (SPARSE_SIZE-1)]);
-}
-
 int
 objtable_layer_init(ObjTableLayer *layer) {
   structmap_init(&(layer->sm), &klox_allocation_size);
@@ -439,22 +429,6 @@ objtable_layer_insert(struct cb        **cb,
   }
 
   return structmap_insert(cb, region, &(layer->sm), key, value);
-}
-
-bool
-objtable_layer_lookup(const struct cb *cb,
-                      ObjTableLayer   *layer,
-                      uint64_t         key,
-                      uint64_t        *value)
-{
-  uint64_t keyhash = hash_key(key);
-  ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, keyhash);
-  if (entry->n < layer->num_dense_entries && layer->dense[entry->n] == key) {
-    *value = entry->value;
-    return true;
-  }
-
-  return structmap_lookup(cb, &(layer->sm), key, value);
 }
 
 int
