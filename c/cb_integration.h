@@ -234,8 +234,20 @@ struct CBO
 
 typedef struct { uint64_t id; } ObjID;
 
+//FIXME replace with constant of some kind...
+#define SPARSE_SIZE (1<<14)
+
+typedef struct ObjTableLayerEntry {
+  uint64_t n;
+  uint64_t value;
+} ObjTableLayerEntry;
+
 typedef struct ObjTableLayer {
-  struct structmap sm;
+  struct structmap   sm;
+  unsigned int       num_dense_entries;
+  size_t             dense_external_size;
+  uint64_t           dense[1000];
+  ObjTableLayerEntry sparse[SPARSE_SIZE];
 } ObjTableLayer;
 
 typedef struct ObjTable {
