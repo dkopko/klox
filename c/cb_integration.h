@@ -302,6 +302,7 @@ objtable_layer_lookup(const struct cb *cb,
 {
   ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, hash_key(key));
   if (entry->n < layer->num_dense_entries && layer->dense[entry->n] == key) {
+    assert(structmap_lookup(cb, &(layer->sm), key, value) == false); // Storage in the O(1) substructure precludes storage in the structmap.
     *value = entry->value;
     return true;
   }
