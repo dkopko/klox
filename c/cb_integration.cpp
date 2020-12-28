@@ -259,7 +259,7 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 }
 
 int
-objtable_layer_init(ObjTableLayer *layer) {
+objtablelayer_init(ObjTableLayer *layer) {
   structmap_init(&(layer->sm), &klox_allocation_size);
   layer->num_dense_entries = 0;
   layer->dense_external_size = 0;
@@ -267,32 +267,17 @@ objtable_layer_init(ObjTableLayer *layer) {
 }
 
 int
-objtable_layer_assign(ObjTableLayer *dest, ObjTableLayer *src) {
+objtablelayer_assign(ObjTableLayer *dest, ObjTableLayer *src) {
   *dest = *src;
-
-#if 0
-  dest->sm = src->sm;
-
-  for (unsigned int i = 0, e = src->num_dense_entries; i < e; ++i) {
-    uint64_t key = src->dense[i];
-    ObjTableLayerEntry *entry = objtable_layer_sparse_entry(src, hash_key(key));
-    uint64_t value = entry->value;
-
-    assert(entry->n == i);
-
-    objtable_layer_insert(NULL, NULL, dest, key, value);
-  }
-  dest->num_dense_entries = src->num_dense_entries;
-#endif
 
   return 0;
 }
 
 int
-objtable_layer_traverse(const struct cb                **cb,
-                        ObjTableLayer                   *layer,
-                        objtable_layer_traverse_func_t   func,
-                        void                            *closure) {
+objtablelayer_traverse(const struct cb                **cb,
+                       ObjTableLayer                   *layer,
+                       objtablelayer_traverse_func_t   func,
+                       void                            *closure) {
   int ret;
 
   (void) ret;
@@ -300,7 +285,7 @@ objtable_layer_traverse(const struct cb                **cb,
   // Traverse the dense entries.
   for (unsigned int i = 0, e = layer->num_dense_entries; i < e; ++i) {
     uint64_t key = layer->dense[i];
-    ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, hash_key(key));
+    ObjTableLayerEntry *entry = objtablelayer_sparse_entry(layer, hash_key(key));
     uint64_t value = entry->value;
 
     assert(entry->n == i);
@@ -319,105 +304,48 @@ objtable_layer_traverse(const struct cb                **cb,
 }
 
 size_t
-objtable_layer_external_size(ObjTableLayer *layer) {
+objtablelayer_external_size(ObjTableLayer *layer) {
   return structmap_external_size(&(layer->sm)) + layer->dense_external_size;
 }
 
 size_t
-objtable_layer_internal_size(ObjTableLayer *layer) {
+objtablelayer_internal_size(ObjTableLayer *layer) {
   return structmap_internal_size(&(layer->sm));
 }
 
 size_t
-objtable_layer_size(ObjTableLayer *layer) {
+objtablelayer_size(ObjTableLayer *layer) {
   return structmap_size(&(layer->sm)) + layer->dense_external_size;
 }
 
 size_t
-objtable_layer_modification_size(void)
+objtablelayer_modification_size(void)
 {
   return structmap_modification_size();
 }
 
 void
-objtable_layer_external_size_adjust(ObjTableLayer *layer,
-                                    ssize_t        adjustment)
+objtablelayer_external_size_adjust(ObjTableLayer *layer,
+                                   ssize_t        adjustment)
 {
-  //FIXME WTF to do here?
+  //FIXME This should just adjust a layer-local variable
   structmap_external_size_adjust(&(layer->sm), adjustment);
 }
 
-
-
-#if 0
-
-add-member(i):
-    dense[n] = i
-    sparse[i] = n
-    n++
-
-is-member(i):
-    return sparse[i] < n && dense[sparse[i]] == i
-
-------------------
-
-add(k, v):
-    dense[n] = k
-    sparse[hash(k)].n = n
-    sparse[hash(k)].val = v
-    n++
-
-contains(k):
-    return sparse[hash(k)].n < n && dense[sparse[hash(k)].n] == k
-
-get(k):
-    if (!contains(k)) return 0;
-    return sparse[hash(k)].val;
-
-----------------------
-
-add(k, v):
-    if (n < 1000) {
-      uint64_t keyhash = hash_key(k);
-      ObjTableLayerEntry *entry = objtable_layer_sparse_entry(keyhash);
-
-      bool sparse_entry_already_used = entry->n < n && entry == objtable_layer_sparse_entry(hash_key(dense[entry->n]))
-
-      if (!sparse_entry_already_used) {
-        dense[n] = k
-        entry->n = n
-        entry->val = v
-        n++
-        return;
-      }
-    }
-    insert in sm;
-
-get(k):
-    uint64_t keyhash = hash_key(k);
-    ObjTableLayerEntry *entry = objtable_layer_sparse_entry(keyhash);
-    if (entry->n < n && dense[entry->n] == k) {
-      return entry->val;
-    }
-    get from sm;
-
-#endif
-
-
 int
-objtable_layer_insert(struct cb        **cb,
-                      struct cb_region  *region,
-                      ObjTableLayer     *layer,
-                      uint64_t           key,
-                      uint64_t           value)
+objtablelayer_insert(struct cb        **cb,
+                     struct cb_region  *region,
+                     ObjTableLayer     *layer,
+                     uint64_t           key,
+                     uint64_t           value)
 {
   unsigned int n = layer->num_dense_entries;
 
-  if (n < 1000) {
+  if (n < OBJTABLELAYER_DENSE_SIZE) {
       uint64_t keyhash = hash_key(key);
-      ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, keyhash);
+      ObjTableLayerEntry *entry = objtablelayer_sparse_entry(layer, keyhash);
 
-      bool already_used = entry->n < n && entry == objtable_layer_sparse_entry(layer, hash_key(layer->dense[entry->n]));
+      bool already_used = entry->n < n && entry == objtablelayer_sparse_entry(layer, hash_key(layer->dense[entry->n]));
       if (!already_used) {
         layer->dense[n] = key;
         entry->n = n;
@@ -446,9 +374,9 @@ fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm
 void
 objtable_init(ObjTable *obj_table)
 {
-  objtable_layer_init(&(obj_table->a));
-  objtable_layer_init(&(obj_table->b));
-  objtable_layer_init(&(obj_table->c));
+  objtablelayer_init(&(obj_table->a));
+  objtablelayer_init(&(obj_table->b));
+  objtablelayer_init(&(obj_table->c));
   obj_table->next_obj_id.id  = 1;
 }
 
@@ -458,7 +386,7 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
   int ret;
   (void)ret;
 
-  ret = objtable_layer_insert(&thread_cb, &thread_region, &(obj_table->a), obj_id.id, offset);
+  ret = objtablelayer_insert(&thread_cb, &thread_region, &(obj_table->a), obj_id.id, offset);
   assert(ret == 0);
 }
 
@@ -479,11 +407,11 @@ objtable_lookup(ObjTable *obj_table, ObjID obj_id)
   uint64_t v = 0;
   bool lookup_success;
 
-  lookup_success = objtable_layer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v);
+  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v);
   if (lookup_success) goto done;
-  lookup_success = objtable_layer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v);
+  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v);
   if (lookup_success) goto done;
-  lookup_success = objtable_layer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v);
+  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v);
   if (lookup_success) goto done;
 
 done:
@@ -500,7 +428,7 @@ objtable_lookup_A(ObjTable *obj_table, ObjID obj_id)
   uint64_t v = 0;
   bool lookup_success;
 
-  lookup_success = objtable_layer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v);
+  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v);
   if (!lookup_success || (cb_offset_t)v == CB_NULL) {
     return CB_NULL;
   }
@@ -514,7 +442,7 @@ objtable_lookup_B(ObjTable *obj_table, ObjID obj_id)
   uint64_t v = 0;
   bool lookup_success;
 
-  lookup_success = objtable_layer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v);
+  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v);
   if (!lookup_success || (cb_offset_t)v == CB_NULL) {
     return CB_NULL;
   }
@@ -528,7 +456,7 @@ objtable_lookup_C(ObjTable *obj_table, ObjID obj_id)
   uint64_t v = 0;
   bool lookup_success;
 
-  lookup_success = objtable_layer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v);
+  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v);
   if (!lookup_success || (cb_offset_t)v == CB_NULL) {
     return CB_NULL;
   }
@@ -543,18 +471,18 @@ objtable_invalidate(ObjTable *obj_table, ObjID obj_id)
 
   (void)ret;
 
-  ret = objtable_layer_insert(&thread_cb,
-                              &thread_region,
-                              &(obj_table->a),
-                              obj_id.id,
-                              (uint64_t)CB_NULL);
+  ret = objtablelayer_insert(&thread_cb,
+                             &thread_region,
+                             &(obj_table->a),
+                             obj_id.id,
+                             (uint64_t)CB_NULL);
   assert(ret == 0);
 }
 
 void
 objtable_external_size_adjust_A(ObjTable *obj_table, ssize_t adjustment)
 {
-    objtable_layer_external_size_adjust(&(obj_table->a), adjustment);
+    objtablelayer_external_size_adjust(&(obj_table->a), adjustment);
 }
 
 void
@@ -563,17 +491,17 @@ objtable_freeze(ObjTable *obj_table)
   //assert(num_entries(obj_table->c) == 0); //FIXME create this check
   obj_table->c = obj_table->b;
   obj_table->b = obj_table->a;
-  objtable_layer_init(&(obj_table->a));
+  objtablelayer_init(&(obj_table->a));
 }
 
 size_t
 objtable_consolidation_size(ObjTable *obj_table)
 {
-  size_t objtable_b_size = objtable_layer_size(&(obj_table->b));
-  size_t objtable_c_size = objtable_layer_size(&(obj_table->c));
+  size_t objtable_b_size = objtablelayer_size(&(obj_table->b));
+  size_t objtable_c_size = objtablelayer_size(&(obj_table->c));
   KLOX_TRACE("objtable_b_size: %zu, objtable_c_size: %zu\n",
          objtable_b_size, objtable_c_size);
-  return objtable_b_size + objtable_c_size + objtable_layer_modification_size();
+  return objtable_b_size + objtable_c_size + objtablelayer_modification_size();
 }
 
 cb_offset_t
@@ -1005,9 +933,9 @@ gc_main_loop(void)
     thread_ring_start = cb_ring_start(thread_cb);
     thread_ring_mask  = cb_ring_mask(thread_cb);
     // Make the threadlocal ObjTable resolve toward the target's frozen B and C layers.
-    objtable_layer_init(&(thread_objtable.a));
-    objtable_layer_assign(&(thread_objtable.b), &(curr_request->req.objtable_b));
-    objtable_layer_assign(&(thread_objtable.c), &(curr_request->req.objtable_c));
+    objtablelayer_init(&(thread_objtable.a));
+    objtablelayer_assign(&(thread_objtable.b), &(curr_request->req.objtable_b));
+    objtablelayer_assign(&(thread_objtable.c), &(curr_request->req.objtable_c));
     ret = gc_perform(curr_request);
     if (ret != 0) {
       fprintf(stderr, "Failed to GC via CB.\n");
@@ -1212,15 +1140,15 @@ copy_objtable_b(uint64_t  key,
     cl->white_list = obj_id;
   }
 
-  DEBUG_ONLY(cb_region_align_cursor(&(cl->dest_cb), cl->dest_region, objtable_layer_insertion_alignment_get()));
+  DEBUG_ONLY(cb_region_align_cursor(&(cl->dest_cb), cl->dest_region, objtablelayer_insertion_alignment_get()));
 
   DEBUG_ONLY(cb_offset_t c0b = cb_region_cursor(cl->dest_region));
 
-  ret = objtable_layer_insert(&(cl->dest_cb),
-                              cl->dest_region,
-                              cl->new_b,
-                              key,
-                              (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
+  ret = objtablelayer_insert(&(cl->dest_cb),
+                             cl->dest_region,
+                             cl->new_b,
+                             key,
+                             (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
   assert(ret == 0);
 
   DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
@@ -1228,9 +1156,9 @@ copy_objtable_b(uint64_t  key,
   DEBUG_ONLY(size_t external_used_bytes = (size_t)(c0a - c0));
   DEBUG_ONLY(size_t internal_used_bytes = (size_t)(c1 - c0b));
   DEBUG_ONLY(size_t total_used_bytes = (size_t)(c1 - c0));
-  DEBUG_ONLY(size_t new_b_external_size = objtable_layer_external_size(cl->new_b));
-  DEBUG_ONLY(size_t new_b_internal_size = objtable_layer_internal_size(cl->new_b));
-  DEBUG_ONLY(size_t new_b_size = objtable_layer_size(cl->new_b));
+  DEBUG_ONLY(size_t new_b_external_size = objtablelayer_external_size(cl->new_b));
+  DEBUG_ONLY(size_t new_b_internal_size = objtablelayer_internal_size(cl->new_b));
+  DEBUG_ONLY(size_t new_b_size = objtablelayer_size(cl->new_b));
   DEBUG_ONLY(KLOX_TRACE("+%ju external, +%ju internal bytes (external estimate:+%ju, internal estimate:+%ju) #%ju -> @%ju %s\n",
          (uintmax_t)external_used_bytes,
          (uintmax_t)internal_used_bytes,
@@ -1296,7 +1224,7 @@ copy_objtable_c_not_in_b(uint64_t  key,
   // If an entry exists in both B and C, B's entry should mask C's EXCEPT when
   // the B entry and C entry can be merged (which is when they are both ObjClass
   // or both ObjInstance objects).
-  if (objtable_layer_lookup(cl->src_cb, cl->new_b, key, &temp_val) == true) {
+  if (objtablelayer_lookup(cl->src_cb, cl->new_b, key, &temp_val) == true) {
     cb_offset_t bEntryOffset = (cb_offset_t)temp_val;
     CBO<Obj> bEntryObj = bEntryOffset;
     CBO<Obj> cEntryObj = cEntryOffset;
@@ -1373,15 +1301,15 @@ copy_objtable_c_not_in_b(uint64_t  key,
       cl->white_list = objOID.id();
     }
 
-    DEBUG_ONLY(cb_region_align_cursor(&(cl->dest_cb), cl->dest_region, objtable_layer_insertion_alignment_get()));
+    DEBUG_ONLY(cb_region_align_cursor(&(cl->dest_cb), cl->dest_region, objtablelayer_insertion_alignment_get()));
 
     DEBUG_ONLY(cb_offset_t c0b = cb_region_cursor(cl->dest_region));
 
-    ret = objtable_layer_insert(&(cl->dest_cb),
-                                cl->dest_region,
-                                cl->new_b,
-                                key,
-                                (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
+    ret = objtablelayer_insert(&(cl->dest_cb),
+                               cl->dest_region,
+                               cl->new_b,
+                               key,
+                               (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
     assert(ret == 0);
 
     DEBUG_ONLY(internal_used_bytes = (size_t)(cb_region_cursor(cl->dest_region) - c0b));
@@ -1394,13 +1322,13 @@ copy_objtable_c_not_in_b(uint64_t  key,
   // new_root_b's notion of its external size.
   if (external_size_adjustment != 0) {
     assert(external_size_adjustment > 0); //We only add things.
-    objtable_layer_external_size_adjust(cl->new_b, external_size_adjustment);
+    objtablelayer_external_size_adjust(cl->new_b, external_size_adjustment);
   }
 
   DEBUG_ONLY(size_t total_used_bytes = (size_t)(c1 - c0));
-  DEBUG_ONLY(size_t new_b_external_size = objtable_layer_external_size(cl->new_b));
-  DEBUG_ONLY(size_t new_b_internal_size = objtable_layer_internal_size(cl->new_b));
-  DEBUG_ONLY(size_t new_b_size = objtable_layer_size(cl->new_b));
+  DEBUG_ONLY(size_t new_b_external_size = objtablelayer_external_size(cl->new_b));
+  DEBUG_ONLY(size_t new_b_internal_size = objtablelayer_internal_size(cl->new_b));
+  DEBUG_ONLY(size_t new_b_size = objtablelayer_size(cl->new_b));
   DEBUG_ONLY(KLOX_TRACE("+%ju external, +%ju internal bytes (external estimate:+%ju, internal estimate +%ju) #%ju -> @%ju (external_size_adjustment: %zd)\n",
          (uintmax_t)external_used_bytes,
          (uintmax_t)internal_used_bytes,
@@ -1651,15 +1579,15 @@ gc_perform(struct gc_request_response *rr)
 
     (void) ret;
 
-    ret = objtable_layer_traverse((const struct cb **)&(rr->req.orig_cb),
-                                  &(rr->req.objtable_b),
-                                  &grayObjtableTraversal,
-                                  (void*)"B");
+    ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
+                                 &(rr->req.objtable_b),
+                                 &grayObjtableTraversal,
+                                 (void*)"B");
     assert(ret == 0);
-    ret = objtable_layer_traverse((const struct cb **)&(rr->req.orig_cb),
-                                  &(rr->req.objtable_c),
-                                  &grayObjtableTraversal,
-                                  (void*)"C");
+    ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
+                                 &(rr->req.objtable_c),
+                                 &grayObjtableTraversal,
+                                 (void*)"C");
     assert(ret == 0);
   }
 
@@ -1738,24 +1666,24 @@ gc_perform(struct gc_request_response *rr)
         cb_region_cursor(&rr->req.objtable_new_region),
         cb_region_end(&rr->req.objtable_new_region));
 
-    objtable_layer_init(&(rr->resp.objtable_new_b));
+    objtablelayer_init(&(rr->resp.objtable_new_b));
     KLOX_TRACE("condense objtable 1:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
 
     closure.src_cb      = rr->req.orig_cb;
     closure.dest_cb     = rr->req.orig_cb;
     closure.dest_region = &(rr->req.objtable_new_region);
     closure.new_b       = &(rr->resp.objtable_new_b);
-    DEBUG_ONLY(closure.last_new_b_external_size = objtable_layer_external_size(&(rr->resp.objtable_new_b)));
-    DEBUG_ONLY(closure.last_new_b_internal_size = objtable_layer_internal_size(&(rr->resp.objtable_new_b)));
-    DEBUG_ONLY(closure.last_new_b_size = objtable_layer_size(&(rr->resp.objtable_new_b)));
+    DEBUG_ONLY(closure.last_new_b_external_size = objtablelayer_external_size(&(rr->resp.objtable_new_b)));
+    DEBUG_ONLY(closure.last_new_b_internal_size = objtablelayer_internal_size(&(rr->resp.objtable_new_b)));
+    DEBUG_ONLY(closure.last_new_b_size = objtablelayer_size(&(rr->resp.objtable_new_b)));
     closure.white_list  = CB_NULL_OID;
 
     KLOX_TRACE("condense objtable 2:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
 
-    ret = objtable_layer_traverse((const struct cb **)&(rr->req.orig_cb),
-                                  &(rr->req.objtable_b),
-                                  copy_objtable_b,
-                                  &closure);
+    ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
+                                 &(rr->req.objtable_b),
+                                 copy_objtable_b,
+                                 &closure);
     assert(ret == 0);
     KLOX_TRACE("condense objtable 3:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
     KLOX_TRACE("done with copy_objtable_b(). region: [s:%ju, c:%ju, e:%ju], used size: %ju\n",
@@ -1764,10 +1692,10 @@ gc_perform(struct gc_request_response *rr)
                (uintmax_t)cb_region_end(&(rr->req.objtable_new_region)),
                (uintmax_t)(cb_region_cursor(&(rr->req.objtable_new_region)) - cb_region_start(&(rr->req.objtable_new_region))));
 
-    ret = objtable_layer_traverse((const struct cb **)&(rr->req.orig_cb),
-                                  &(rr->req.objtable_c),
-                                  copy_objtable_c_not_in_b,
-                                  &closure);
+    ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
+                                 &(rr->req.objtable_c),
+                                 copy_objtable_c_not_in_b,
+                                 &closure);
     assert(ret == 0);
     KLOX_TRACE("condense objtable 4:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
     KLOX_TRACE("done with copy_objtable_c_not_in_b() [s:%ju, c:%ju, e:%ju], used size: %ju\n",
@@ -1830,9 +1758,9 @@ gc_perform(struct gc_request_response *rr)
 
     //Create temporary view of what will be the new, consolidated objtable.
     ObjTable consObjtable;
-    objtable_layer_assign(&(consObjtable.a), &(rr->resp.objtable_new_b));
-    objtable_layer_init(&(consObjtable.b));
-    objtable_layer_init(&(consObjtable.c));
+    objtablelayer_assign(&(consObjtable.a), &(rr->resp.objtable_new_b));
+    objtablelayer_init(&(consObjtable.b));
+    objtablelayer_init(&(consObjtable.c));
 
 
     //Copy C section
