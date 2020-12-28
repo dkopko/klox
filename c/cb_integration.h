@@ -234,8 +234,8 @@ struct CBO
 
 typedef struct { uint64_t id; } ObjID;
 
-//FIXME replace with constant of some kind...
-#define SPARSE_SIZE (1<<14)
+const int OBJTABLELAYER_DENSE_SIZE = 1000;
+const int OBJTABLELAYER_SPARSE_SIZE = (1<<14);
 
 typedef struct ObjTableLayerEntry {
   uint64_t n;
@@ -246,8 +246,8 @@ typedef struct ObjTableLayer {
   struct structmap   sm;
   unsigned int       num_dense_entries;
   size_t             dense_external_size;
-  uint64_t           dense[1000];
-  ObjTableLayerEntry sparse[SPARSE_SIZE];
+  uint64_t           dense[OBJTABLELAYER_DENSE_SIZE];
+  ObjTableLayerEntry sparse[OBJTABLELAYER_SPARSE_SIZE];
 } ObjTableLayer;
 
 typedef struct ObjTable {
@@ -257,28 +257,28 @@ typedef struct ObjTable {
   ObjID         next_obj_id;
 } ObjTable;
 
-int objtable_layer_init(ObjTableLayer *layer);
-int objtable_layer_assign(ObjTableLayer *dest, ObjTableLayer *src);
+int objtablelayer_init(ObjTableLayer *layer);
+int objtablelayer_assign(ObjTableLayer *dest, ObjTableLayer *src);
 
-typedef int (*objtable_layer_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
-int objtable_layer_traverse(const struct cb                **cb,
+typedef int (*objtablelayer_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
+int objtablelayer_traverse(const struct cb                **cb,
                             ObjTableLayer                   *layer,
-                            objtable_layer_traverse_func_t   func,
+                            objtablelayer_traverse_func_t   func,
                             void                            *closure);
 
-size_t objtable_layer_external_size(ObjTableLayer *layer);
-size_t objtable_layer_internal_size(ObjTableLayer *layer);
-size_t objtable_layer_size(ObjTableLayer *layer);
-void objtable_layer_external_size_adjust(ObjTableLayer *layer, ssize_t adjustment);
+size_t objtablelayer_external_size(ObjTableLayer *layer);
+size_t objtablelayer_internal_size(ObjTableLayer *layer);
+size_t objtablelayer_size(ObjTableLayer *layer);
+void objtablelayer_external_size_adjust(ObjTableLayer *layer, ssize_t adjustment);
 // NOTE: The following is used to pre-align a region's cursor before an
-// objtable_layer_insert() in copy_objtable_b() and copy_objtable_c_not_in_b()
+// objtablelayer_insert() in copy_objtable_b() and copy_objtable_c_not_in_b()
 // for the sake of accurately tracking in Debug builds how much of the region is
 // being consumed by that insertion.
-extern inline size_t objtable_layer_insertion_alignment_get() { return 8; }
+extern inline size_t objtablelayer_insertion_alignment_get() { return 8; }
 
 
 int
-objtable_layer_insert(struct cb        **cb,
+objtablelayer_insert(struct cb        **cb,
                       struct cb_region  *region,
                       ObjTableLayer     *layer,
                       uint64_t           key,
@@ -290,17 +290,17 @@ hash_key(uint64_t key) {
 }
 
 extern inline ObjTableLayerEntry*
-objtable_layer_sparse_entry(ObjTableLayer *layer, uint64_t hashval) {
-  return &(layer->sparse[hashval & (SPARSE_SIZE-1)]);
+objtablelayer_sparse_entry(ObjTableLayer *layer, uint64_t hashval) {
+  return &(layer->sparse[hashval & (OBJTABLELAYER_SPARSE_SIZE-1)]);
 }
 
 extern inline bool
-objtable_layer_lookup(const struct cb *cb,
+objtablelayer_lookup(const struct cb *cb,
                       ObjTableLayer   *layer,
                       uint64_t         key,
                       uint64_t        *value)
 {
-  ObjTableLayerEntry *entry = objtable_layer_sparse_entry(layer, hash_key(key));
+  ObjTableLayerEntry *entry = objtablelayer_sparse_entry(layer, hash_key(key));
   if (entry->n < layer->num_dense_entries && layer->dense[entry->n] == key) {
     assert(structmap_lookup(cb, &(layer->sm), key, value) == false); // Storage in the O(1) substructure precludes storage in the structmap.
     *value = entry->value;
