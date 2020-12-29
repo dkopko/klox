@@ -404,64 +404,48 @@ objtable_add(ObjTable *obj_table, cb_offset_t offset)
 cb_offset_t
 objtable_lookup(ObjTable *obj_table, ObjID obj_id)
 {
-  uint64_t v = 0;
-  bool lookup_success;
+  uint64_t v;
 
-  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v);
-  if (lookup_success) goto done;
-  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v);
-  if (lookup_success) goto done;
-  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v);
-  if (lookup_success) goto done;
-
-done:
-  if (!lookup_success || (cb_offset_t)v == CB_NULL) {
-    return CB_NULL;
+  if (objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v) ||
+      objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v) ||
+      objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v)) {
+    return PURE_OFFSET((cb_offset_t)v);
   }
 
-  return PURE_OFFSET((cb_offset_t)v);
+  return CB_NULL;
 }
 
 cb_offset_t
 objtable_lookup_A(ObjTable *obj_table, ObjID obj_id)
 {
-  uint64_t v = 0;
-  bool lookup_success;
+  uint64_t v;
 
-  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v);
-  if (!lookup_success || (cb_offset_t)v == CB_NULL) {
-    return CB_NULL;
-  }
+  if (objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v))
+    return PURE_OFFSET((cb_offset_t)v);
 
-  return PURE_OFFSET((cb_offset_t)v);
+  return CB_NULL;
 }
 
 cb_offset_t
 objtable_lookup_B(ObjTable *obj_table, ObjID obj_id)
 {
-  uint64_t v = 0;
-  bool lookup_success;
+  uint64_t v;
 
-  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v);
-  if (!lookup_success || (cb_offset_t)v == CB_NULL) {
-    return CB_NULL;
-  }
+  if (objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v))
+    return PURE_OFFSET((cb_offset_t)v);
 
-  return PURE_OFFSET((cb_offset_t)v);
+  return CB_NULL;
 }
 
 cb_offset_t
 objtable_lookup_C(ObjTable *obj_table, ObjID obj_id)
 {
-  uint64_t v = 0;
-  bool lookup_success;
+  uint64_t v;
 
-  lookup_success = objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v);
-  if (!lookup_success || (cb_offset_t)v == CB_NULL) {
-    return CB_NULL;
-  }
+  if (objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v))
+    return PURE_OFFSET((cb_offset_t)v);
 
-  return PURE_OFFSET((cb_offset_t)v);
+  return CB_NULL;
 }
 
 void
