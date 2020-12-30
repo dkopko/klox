@@ -254,19 +254,27 @@ typedef struct ObjTableLayer {
 const int OBJTABLE_CACHE_DENSE_SIZE = 1000;
 const int OBJTABLE_CACHE_SPARSE_SIZE = (1<<14);
 
-typedef struct ObjTableEntry {
+typedef struct ObjTableDenseEntry {
+  uint64_t     key;
+  unsigned int next;
+  unsigned int prev;
+} ObjTableDenseEntry;
+
+typedef struct ObjTableSparseEntry {
   uint64_t n;
   uint64_t value;
-} ObjTableEntry;
+} ObjTableSparseEntry;
 
 typedef struct ObjTable {
-  ObjTableLayer a;
-  ObjTableLayer b;
-  ObjTableLayer c;
-  ObjID         next_obj_id;
-  unsigned int  num_cache_entries;
-  uint64_t      dense[OBJTABLE_CACHE_DENSE_SIZE];
-  ObjTableEntry sparse[OBJTABLE_CACHE_SPARSE_SIZE];
+  ObjTableLayer       a;
+  ObjTableLayer       b;
+  ObjTableLayer       c;
+  ObjID               next_obj_id;
+  unsigned int        num_cache_entries;
+  unsigned int        first;
+  unsigned int        last;
+  ObjTableDenseEntry  dense[OBJTABLE_CACHE_DENSE_SIZE];
+  ObjTableSparseEntry sparse[OBJTABLE_CACHE_SPARSE_SIZE];
 } ObjTable;
 
 int objtablelayer_init(ObjTableLayer *layer);
