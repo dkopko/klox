@@ -400,60 +400,38 @@ objtable_cache_put(ObjTable        *obj_table,
   unsigned int n = obj_table->num_cache_entries;
   bool already_used = sparse_entry->n < n && sparse_entry == objtable_sparse_entry(obj_table, hash_key(obj_table->dense[sparse_entry->n].key));
 
+  unsigned int dense_loc;
   if (already_used) {
-    unsigned int dense_loc = sparse_entry->n;
-    ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
+    dense_loc = sparse_entry->n;
+  } else if (n < OBJTABLE_CACHE_DENSE_SIZE) {
+    dense_loc = n;
+  } else {
+    dense_loc = obj_table->first;
+  }
 
-    // Remove from existing location in LRU list.
+  ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
+
+  // Remove from existing location in LRU list.
+  if (already_used || n == OBJTABLE_CACHE_DENSE_SIZE) {
     if (dense_loc == obj_table->first) obj_table->first = obj_table->dense[obj_table->first].next;
     obj_table->dense[dense_entry->prev].next = dense_entry->next;
     obj_table->dense[dense_entry->next].prev = dense_entry->prev;
+  }
 
-    // Assign key->value mapping.
-    dense_entry->key = key;
-    sparse_entry->value = value;
+  // Assign key->value mapping, plus cross-link.
+  dense_entry->key = key;
+  sparse_entry->value = value;
+  sparse_entry->n = dense_loc;
 
-    // Insert at newest location in LRU list.
-    obj_table->dense[obj_table->last].next = dense_loc;
-    dense_entry->prev = obj_table->last;
-    dense_entry->next = 0;
-    obj_table->last = dense_loc;
-  } else if (n < OBJTABLE_CACHE_DENSE_SIZE) {
-    unsigned int dense_loc = n;
-    ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
+  // Insert at newest location in LRU list.
+  obj_table->dense[obj_table->last].next = dense_loc;
+  dense_entry->prev = obj_table->last;
+  dense_entry->next = 0;
+  obj_table->last = dense_loc;
 
-    // Assign key->value mapping, plus cross-link.
-    dense_entry->key = key;
-    sparse_entry->value = value;
-    sparse_entry->n = dense_loc;
-
-    // Insert at newest location in LRU list.
-    obj_table->dense[obj_table->last].next = dense_loc;
-    dense_entry->prev = obj_table->last;
-    dense_entry->next = 0;
-    obj_table->last = dense_loc;
-
-    // Increment count of dense entries.
+  // Increment count of dense entries.
+  if (!already_used && n < OBJTABLE_CACHE_DENSE_SIZE) {
     obj_table->num_cache_entries++;
-  } else {
-    unsigned int dense_loc = obj_table->first;
-    ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
-
-    // Remove from existing location in LRU list.
-    obj_table->first = obj_table->dense[obj_table->first].next;
-    obj_table->dense[dense_entry->prev].next = dense_entry->next;
-    obj_table->dense[dense_entry->next].prev = dense_entry->prev;
-
-    // Assign key->value mapping, plus cross-link.
-    dense_entry->key = key;
-    sparse_entry->value = value;
-    sparse_entry->n = dense_loc;
-
-    // Insert at newest location in LRU list.
-    obj_table->dense[obj_table->last].next = dense_loc;
-    dense_entry->prev = obj_table->last;
-    dense_entry->next = 0;
-    obj_table->last = dense_loc;
   }
 }
 
