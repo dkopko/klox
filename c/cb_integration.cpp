@@ -371,7 +371,7 @@ fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm
   return 0;
 }
 
-extern inline ObjTableEntry*
+extern inline ObjTableSparseEntry*
 objtable_sparse_entry(ObjTable *obj_table, uint64_t hashval) {
   return &(obj_table->sparse[hashval & (OBJTABLE_CACHE_SPARSE_SIZE-1)]);
 }
@@ -381,9 +381,9 @@ objtable_cache_get(ObjTable        *obj_table,
                    uint64_t         key,
                    uint64_t        *value)
 {
-  ObjTableEntry *entry = objtable_sparse_entry(obj_table, hash_key(key));
-  if (entry->n < obj_table->num_cache_entries && obj_table->dense[entry->n] == key) {
-    *value = entry->value;
+  ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
+  if (sparse_entry->n < obj_table->num_cache_entries && obj_table->dense[sparse_entry->n].key == key) {
+    *value = sparse_entry->value;
     return true;
   }
 
@@ -395,23 +395,65 @@ objtable_cache_put(ObjTable        *obj_table,
                    uint64_t         key,
                    uint64_t         value)
 {
-  ObjTableEntry *entry = objtable_sparse_entry(obj_table, hash_key(key));
+  ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
   unsigned int n = obj_table->num_cache_entries;
-  bool already_used = entry->n < n && entry == objtable_sparse_entry(obj_table, hash_key(obj_table->dense[entry->n]));
+  bool already_used = sparse_entry->n < n && sparse_entry == objtable_sparse_entry(obj_table, hash_key(obj_table->dense[sparse_entry->n].key));
 
   if (already_used) {
-    obj_table->dense[entry->n] = key;
-    entry->value = value;
-    return;
-  } else if (n < OBJTABLE_CACHE_DENSE_SIZE) {
-    obj_table->dense[n] = key;
-    entry->n = n;
-    entry->value = value;
-    obj_table->num_cache_entries++;
-    return;
-  }
+    unsigned int dense_loc = sparse_entry->n;
+    ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
 
-  //FIXME OBJTABLECACHE LRU Replacement here?
+    // Remove from existing location in LRU list.
+    if (dense_loc == obj_table->first) obj_table->first = obj_table->dense[obj_table->first].next;
+    obj_table->dense[dense_entry->prev].next = dense_entry->next;
+    obj_table->dense[dense_entry->next].prev = dense_entry->prev;
+
+    // Assign key->value mapping.
+    dense_entry->key = key;
+    sparse_entry->value = value;
+
+    // Insert at newest location in LRU list.
+    obj_table->dense[obj_table->last].next = dense_loc;
+    dense_entry->prev = obj_table->last;
+    dense_entry->next = 0;
+    obj_table->last = dense_loc;
+  } else if (n < OBJTABLE_CACHE_DENSE_SIZE) {
+    unsigned int dense_loc = n;
+    ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
+
+    // Assign key->value mapping, plus cross-link.
+    dense_entry->key = key;
+    sparse_entry->value = value;
+    sparse_entry->n = dense_loc;
+
+    // Insert at newest location in LRU list.
+    obj_table->dense[obj_table->last].next = dense_loc;
+    dense_entry->prev = obj_table->last;
+    dense_entry->next = 0;
+    obj_table->last = dense_loc;
+
+    // Increment count of dense entries.
+    obj_table->num_cache_entries++;
+  } else {
+    unsigned int dense_loc = obj_table->first;
+    ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
+
+    // Remove from existing location in LRU list.
+    obj_table->first = obj_table->dense[obj_table->first].next;
+    obj_table->dense[dense_entry->prev].next = dense_entry->next;
+    obj_table->dense[dense_entry->next].prev = dense_entry->prev;
+
+    // Assign key->value mapping, plus cross-link.
+    dense_entry->key = key;
+    sparse_entry->value = value;
+    sparse_entry->n = dense_loc;
+
+    // Insert at newest location in LRU list.
+    obj_table->dense[obj_table->last].next = dense_loc;
+    dense_entry->prev = obj_table->last;
+    dense_entry->next = 0;
+    obj_table->last = dense_loc;
+  }
 }
 
 void
@@ -419,6 +461,7 @@ objtable_cache_clear(ObjTable *obj_table)
 {
   //FIXME OBJTABLECACHE we can remove this function if we switch to an LRU cache.
   obj_table->num_cache_entries = 0;
+  obj_table->last              = 0;
 }
 
 void
@@ -429,6 +472,8 @@ objtable_init(ObjTable *obj_table)
   objtablelayer_init(&(obj_table->c));
   obj_table->next_obj_id.id  = 1;
   obj_table->num_cache_entries = 0;
+  obj_table->first = 0;
+  obj_table->last = 0;
 }
 
 void
