@@ -371,6 +371,56 @@ fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm
   return 0;
 }
 
+extern inline ObjTableEntry*
+objtable_sparse_entry(ObjTable *obj_table, uint64_t hashval) {
+  return &(obj_table->sparse[hashval & (OBJTABLE_CACHE_SPARSE_SIZE-1)]);
+}
+
+extern inline bool
+objtable_cache_get(ObjTable        *obj_table,
+                   uint64_t         key,
+                   uint64_t        *value)
+{
+  ObjTableEntry *entry = objtable_sparse_entry(obj_table, hash_key(key));
+  if (entry->n < obj_table->num_cache_entries && obj_table->dense[entry->n] == key) {
+    *value = entry->value;
+    return true;
+  }
+
+  return false;
+}
+
+extern inline void
+objtable_cache_put(ObjTable        *obj_table,
+                   uint64_t         key,
+                   uint64_t         value)
+{
+  ObjTableEntry *entry = objtable_sparse_entry(obj_table, hash_key(key));
+  unsigned int n = obj_table->num_cache_entries;
+  bool already_used = entry->n < n && entry == objtable_sparse_entry(obj_table, hash_key(obj_table->dense[entry->n]));
+
+  if (already_used) {
+    obj_table->dense[entry->n] = key;
+    entry->value = value;
+    return;
+  } else if (n < OBJTABLE_CACHE_DENSE_SIZE) {
+    obj_table->dense[n] = key;
+    entry->n = n;
+    entry->value = value;
+    obj_table->num_cache_entries++;
+    return;
+  }
+
+  //FIXME OBJTABLECACHE LRU Replacement here?
+}
+
+void
+objtable_cache_clear(ObjTable *obj_table)
+{
+  //FIXME OBJTABLECACHE we can remove this function if we switch to an LRU cache.
+  obj_table->num_cache_entries = 0;
+}
+
 void
 objtable_init(ObjTable *obj_table)
 {
@@ -378,6 +428,7 @@ objtable_init(ObjTable *obj_table)
   objtablelayer_init(&(obj_table->b));
   objtablelayer_init(&(obj_table->c));
   obj_table->next_obj_id.id  = 1;
+  obj_table->num_cache_entries = 0;
 }
 
 void
@@ -388,6 +439,8 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
 
   ret = objtablelayer_insert(&thread_cb, &thread_region, &(obj_table->a), obj_id.id, offset);
   assert(ret == 0);
+
+  objtable_cache_put(obj_table, obj_id.id, offset);
 }
 
 ObjID
@@ -406,9 +459,14 @@ objtable_lookup(ObjTable *obj_table, ObjID obj_id)
 {
   uint64_t v;
 
+  if (objtable_cache_get(obj_table, obj_id.id, &v)) {
+    return PURE_OFFSET((cb_offset_t)v);
+  }
+
   if (objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v) ||
       objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v) ||
       objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v)) {
+    objtable_cache_put(obj_table, obj_id.id, v);
     return PURE_OFFSET((cb_offset_t)v);
   }
 
@@ -451,16 +509,7 @@ objtable_lookup_C(ObjTable *obj_table, ObjID obj_id)
 void
 objtable_invalidate(ObjTable *obj_table, ObjID obj_id)
 {
-  int ret;
-
-  (void)ret;
-
-  ret = objtablelayer_insert(&thread_cb,
-                             &thread_region,
-                             &(obj_table->a),
-                             obj_id.id,
-                             (uint64_t)CB_NULL);
-  assert(ret == 0);
+  objtable_add_at(obj_table, obj_id, CB_NULL);
 }
 
 void
@@ -920,6 +969,7 @@ gc_main_loop(void)
     objtablelayer_init(&(thread_objtable.a));
     objtablelayer_assign(&(thread_objtable.b), &(curr_request->req.objtable_b));
     objtablelayer_assign(&(thread_objtable.c), &(curr_request->req.objtable_c));
+    objtable_cache_clear(&thread_objtable);
     ret = gc_perform(curr_request);
     if (ret != 0) {
       fprintf(stderr, "Failed to GC via CB.\n");
@@ -1742,10 +1792,8 @@ gc_perform(struct gc_request_response *rr)
 
     //Create temporary view of what will be the new, consolidated objtable.
     ObjTable consObjtable;
+    objtable_init(&consObjtable);
     objtablelayer_assign(&(consObjtable.a), &(rr->resp.objtable_new_b));
-    objtablelayer_init(&(consObjtable.b));
-    objtablelayer_init(&(consObjtable.c));
-
 
     //Copy C section
     while (i < rr->req.triframes_frameCount && i < rr->req.triframes_bbi) {
