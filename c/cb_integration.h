@@ -21,6 +21,7 @@ extern __thread struct ObjTable   thread_objtable;
 extern __thread cb_offset_t       pinned_lower_bound;
 extern __thread bool              on_main_thread;
 extern __thread bool              can_print;
+extern __thread cb_offset_t       thread_objtable_lower_bound;
 
 // GC thread state.
 //FIXME make these to gc-thread-local.
@@ -336,7 +337,39 @@ int fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap
 void objtable_init(ObjTable *obj_table);
 void objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset);
 ObjID objtable_add(ObjTable *obj_table, cb_offset_t offset);
-cb_offset_t objtable_lookup(ObjTable *obj_table, ObjID obj_id);
+cb_offset_t objtable_lookup_uncached(ObjTable *obj_table, ObjID obj_id);
+
+extern inline ObjTableSparseEntry*
+objtable_sparse_entry(ObjTable *obj_table, uint64_t hashval) {
+  return &(obj_table->sparse[hashval & (OBJTABLE_CACHE_SPARSE_SIZE-1)]);
+}
+
+extern inline bool
+objtable_cache_get(ObjTable        *obj_table,
+                   uint64_t         key,
+                   uint64_t        *value)
+{
+  ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
+  if (sparse_entry->n < obj_table->num_cache_entries && obj_table->dense[sparse_entry->n].key == key) {
+    *value = sparse_entry->value;
+    return true;
+  }
+
+  return false;
+}
+
+extern inline cb_offset_t
+objtable_lookup(ObjTable *obj_table, ObjID obj_id)
+{
+  uint64_t v;
+
+  if (objtable_cache_get(obj_table, obj_id.id, &v) && cb_offset_cmp((cb_offset_t)v, thread_objtable_lower_bound) >= 0) {
+    return PURE_OFFSET((cb_offset_t)v);
+  }
+
+  return objtable_lookup_uncached(obj_table, obj_id);
+}
+
 cb_offset_t objtable_lookup_A(ObjTable *obj_table, ObjID obj_id);
 cb_offset_t objtable_lookup_B(ObjTable *obj_table, ObjID obj_id);
 cb_offset_t objtable_lookup_C(ObjTable *obj_table, ObjID obj_id);

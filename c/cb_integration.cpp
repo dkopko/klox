@@ -31,6 +31,7 @@ __thread cb_offset_t       pinned_lower_bound   = CB_NULL;
 
 __thread bool              on_main_thread = false;
 __thread bool              can_print      = false;
+__thread cb_offset_t       thread_objtable_lower_bound;
 
 static __thread struct rcbp      *thread_rcbp_list        = NULL;
 
@@ -371,25 +372,6 @@ fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm
   return 0;
 }
 
-extern inline ObjTableSparseEntry*
-objtable_sparse_entry(ObjTable *obj_table, uint64_t hashval) {
-  return &(obj_table->sparse[hashval & (OBJTABLE_CACHE_SPARSE_SIZE-1)]);
-}
-
-extern inline bool
-objtable_cache_get(ObjTable        *obj_table,
-                   uint64_t         key,
-                   uint64_t        *value)
-{
-  ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
-  if (sparse_entry->n < obj_table->num_cache_entries && obj_table->dense[sparse_entry->n].key == key) {
-    *value = sparse_entry->value;
-    return true;
-  }
-
-  return false;
-}
-
 extern inline void
 objtable_cache_put(ObjTable        *obj_table,
                    uint64_t         key,
@@ -477,14 +459,11 @@ objtable_add(ObjTable *obj_table, cb_offset_t offset)
   return obj_id;
 }
 
+
 cb_offset_t
-objtable_lookup(ObjTable *obj_table, ObjID obj_id)
+objtable_lookup_uncached(ObjTable *obj_table, ObjID obj_id)
 {
   uint64_t v;
-
-  if (objtable_cache_get(obj_table, obj_id.id, &v)) {
-    return PURE_OFFSET((cb_offset_t)v);
-  }
 
   if (objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v) ||
       objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v) ||
