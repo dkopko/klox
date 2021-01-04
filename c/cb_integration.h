@@ -252,13 +252,12 @@ typedef struct ObjTableLayer {
 } ObjTableLayer;
 
 
-const int OBJTABLE_CACHE_DENSE_SIZE = 1000;
-const int OBJTABLE_CACHE_SPARSE_SIZE = (1<<14);
+const int OBJTABLE_CACHE_DENSE_SIZE  = (1 << 10);
+const int OBJTABLE_CACHE_SPARSE_SIZE = (1 << 14);
 
 typedef struct ObjTableDenseEntry {
-  uint64_t     key;
-  unsigned int next;
-  unsigned int prev;
+  uint64_t key;
+  uint64_t n;
 } ObjTableDenseEntry;
 
 typedef struct ObjTableSparseEntry {
@@ -272,8 +271,6 @@ typedef struct ObjTable {
   ObjTableLayer       c;
   ObjID               next_obj_id;
   unsigned int        num_cache_entries;
-  unsigned int        first;
-  unsigned int        last;
   ObjTableDenseEntry  dense[OBJTABLE_CACHE_DENSE_SIZE];
   ObjTableSparseEntry sparse[OBJTABLE_CACHE_SPARSE_SIZE];
 } ObjTable;
@@ -340,6 +337,11 @@ void objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset);
 ObjID objtable_add(ObjTable *obj_table, cb_offset_t offset);
 cb_offset_t objtable_lookup_uncached(ObjTable *obj_table, ObjID obj_id);
 
+extern inline ObjTableDenseEntry*
+objtable_dense_entry(ObjTable *obj_table, uint64_t n) {
+  return &(obj_table->dense[n & (OBJTABLE_CACHE_DENSE_SIZE-1)]);
+}
+
 extern inline ObjTableSparseEntry*
 objtable_sparse_entry(ObjTable *obj_table, uint64_t hashval) {
   return &(obj_table->sparse[hashval & (OBJTABLE_CACHE_SPARSE_SIZE-1)]);
@@ -351,7 +353,8 @@ objtable_cache_get(ObjTable        *obj_table,
                    uint64_t        *value)
 {
   ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
-  if (sparse_entry->n < obj_table->num_cache_entries && obj_table->dense[sparse_entry->n].key == key) {
+  ObjTableDenseEntry *dense_entry = objtable_dense_entry(obj_table, sparse_entry->n);
+  if (sparse_entry->n < obj_table->num_cache_entries && dense_entry->n == sparse_entry->n && dense_entry->key == key) {
     *value = sparse_entry->value;
     return true;
   }

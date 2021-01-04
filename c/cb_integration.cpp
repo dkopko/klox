@@ -378,51 +378,22 @@ objtable_cache_put(ObjTable        *obj_table,
                    uint64_t         key,
                    uint64_t         value)
 {
+  unsigned int n = obj_table->num_cache_entries++;
+  unsigned int dense_loc = n & (OBJTABLE_CACHE_DENSE_SIZE - 1);
   ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
-  unsigned int n = obj_table->num_cache_entries;
-  bool already_used = sparse_entry->n < n && sparse_entry == objtable_sparse_entry(obj_table, hash_key(obj_table->dense[sparse_entry->n].key));
-
-  unsigned int dense_loc;
-  if (already_used) {
-    dense_loc = sparse_entry->n;
-  } else if (n < OBJTABLE_CACHE_DENSE_SIZE) {
-    dense_loc = n;
-  } else {
-    dense_loc = obj_table->first;
-  }
-
   ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
-
-  // Remove from existing location in LRU list.
-  if (already_used || n == OBJTABLE_CACHE_DENSE_SIZE) {
-    if (dense_loc == obj_table->first) obj_table->first = obj_table->dense[obj_table->first].next;
-    obj_table->dense[dense_entry->prev].next = dense_entry->next;
-    obj_table->dense[dense_entry->next].prev = dense_entry->prev;
-  }
 
   // Assign key->value mapping, plus cross-link.
   dense_entry->key = key;
+  dense_entry->n = n;
   sparse_entry->value = value;
-  sparse_entry->n = dense_loc;
-
-  // Insert at newest location in LRU list.
-  obj_table->dense[obj_table->last].next = dense_loc;
-  dense_entry->prev = obj_table->last;
-  dense_entry->next = 0;
-  obj_table->last = dense_loc;
-
-  // Increment count of dense entries.
-  if (!already_used && n < OBJTABLE_CACHE_DENSE_SIZE) {
-    obj_table->num_cache_entries++;
-  }
+  sparse_entry->n = n;
 }
 
 void
 objtable_cache_clear(ObjTable *obj_table)
 {
-  //FIXME OBJTABLECACHE we can remove this function if we switch to an LRU cache.
   obj_table->num_cache_entries = 0;
-  obj_table->last              = 0;
 }
 
 void
@@ -433,8 +404,6 @@ objtable_init(ObjTable *obj_table)
   objtablelayer_init(&(obj_table->c));
   obj_table->next_obj_id.id  = 1;
   obj_table->num_cache_entries = 0;
-  obj_table->first = 0;
-  obj_table->last = 0;
 }
 
 void
