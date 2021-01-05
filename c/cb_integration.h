@@ -239,15 +239,12 @@ const int OBJTABLELAYER_DENSE_SIZE = 1000;
 const int OBJTABLELAYER_SPARSE_SIZE = (1<<14);
 
 typedef struct ObjTableLayerEntry {
-  uint64_t n;
+  uint64_t key;
   uint64_t value;
 } ObjTableLayerEntry;
 
 typedef struct ObjTableLayer {
   struct structmap   sm;
-  unsigned int       num_dense_entries;
-  size_t             dense_external_size;
-  uint64_t           dense[OBJTABLELAYER_DENSE_SIZE];
   ObjTableLayerEntry sparse[OBJTABLELAYER_SPARSE_SIZE];
 } ObjTableLayer;
 
@@ -304,20 +301,25 @@ objtablelayer_sparse_entry(ObjTableLayer *layer, uint64_t hashval) {
   return &(layer->sparse[hashval & (OBJTABLELAYER_SPARSE_SIZE-1)]);
 }
 
+bool
+objtablelayer_lookup_uncached(const struct cb *cb,
+                              ObjTableLayer   *layer,
+                              uint64_t         key,
+                              uint64_t        *value);
+
 extern inline bool
 objtablelayer_lookup(const struct cb *cb,
-                      ObjTableLayer   *layer,
-                      uint64_t         key,
-                      uint64_t        *value)
+                     ObjTableLayer   *layer,
+                     uint64_t         key,
+                     uint64_t        *value)
 {
   ObjTableLayerEntry *entry = objtablelayer_sparse_entry(layer, hash_key(key));
-  if (entry->n < layer->num_dense_entries && layer->dense[entry->n] == key) {
-    assert(structmap_lookup(cb, &(layer->sm), key, value) == false); // Storage in the O(1) substructure precludes storage in the structmap.
+  if (__builtin_expect(!!(entry->key == key), 1)) {
     *value = entry->value;
     return true;
   }
 
-  return structmap_lookup(cb, &(layer->sm), key, value);
+  return objtablelayer_lookup_uncached(cb, layer, key, value);
 }
 
 
