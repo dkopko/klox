@@ -261,9 +261,10 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 
 int
 objtablelayer_init(ObjTableLayer *layer) {
+  for (unsigned int i = 0; i < OBJTABLELAYER_SPARSE_SIZE; ++i)
+    layer->sparse[i].key = 0;
+
   structmap_init(&(layer->sm), &klox_allocation_size);
-  layer->num_dense_entries = 0;
-  layer->dense_external_size = 0;
   return 0;
 }
 
@@ -281,18 +282,7 @@ objtablelayer_traverse(const struct cb                **cb,
                        void                            *closure) {
   int ret;
 
-  (void) ret;
-
-  // Traverse the dense entries.
-  for (unsigned int i = 0, e = layer->num_dense_entries; i < e; ++i) {
-    uint64_t key = layer->dense[i];
-    ObjTableLayerEntry *entry = objtablelayer_sparse_entry(layer, hash_key(key));
-    uint64_t value = entry->value;
-
-    assert(entry->n == i);
-
-    func(key, value, closure);
-  }
+  (void)ret;
 
   // Traverse the structmap entries.
   ret = structmap_traverse(cb,
@@ -306,7 +296,7 @@ objtablelayer_traverse(const struct cb                **cb,
 
 size_t
 objtablelayer_external_size(ObjTableLayer *layer) {
-  return structmap_external_size(&(layer->sm)) + layer->dense_external_size;
+  return structmap_external_size(&(layer->sm));
 }
 
 size_t
@@ -316,7 +306,7 @@ objtablelayer_internal_size(ObjTableLayer *layer) {
 
 size_t
 objtablelayer_size(ObjTableLayer *layer) {
-  return structmap_size(&(layer->sm)) + layer->dense_external_size;
+  return structmap_size(&(layer->sm));
 }
 
 size_t
@@ -329,8 +319,17 @@ void
 objtablelayer_external_size_adjust(ObjTableLayer *layer,
                                    ssize_t        adjustment)
 {
-  //FIXME This should just adjust a layer-local variable
   structmap_external_size_adjust(&(layer->sm), adjustment);
+}
+
+extern inline void
+objtablelayer_cache_put(ObjTableLayer *layer,
+                        uint64_t       key,
+                        uint64_t       value)
+{
+  ObjTableLayerEntry *sparse_entry = objtablelayer_sparse_entry(layer, hash_key(key));
+  sparse_entry->key = key;
+  sparse_entry->value = value;
 }
 
 int
@@ -340,24 +339,25 @@ objtablelayer_insert(struct cb        **cb,
                      uint64_t           key,
                      uint64_t           value)
 {
-  unsigned int n = layer->num_dense_entries;
+  int retval = structmap_insert(cb, region, &(layer->sm), key, value);
 
-  if (n < OBJTABLELAYER_DENSE_SIZE) {
-      uint64_t keyhash = hash_key(key);
-      ObjTableLayerEntry *entry = objtablelayer_sparse_entry(layer, keyhash);
+  objtablelayer_cache_put(layer, key, value);
 
-      bool already_used = entry->n < n && entry == objtablelayer_sparse_entry(layer, hash_key(layer->dense[entry->n]));
-      if (!already_used) {
-        layer->dense[n] = key;
-        entry->n = n;
-        entry->value = value;
-        layer->num_dense_entries++;
-        layer->dense_external_size += klox_allocation_size(*cb, value);
-        return 0;
-      }
+  return retval;
+}
+
+bool
+objtablelayer_lookup_uncached(const struct cb *cb,
+                              ObjTableLayer   *layer,
+                              uint64_t         key,
+                              uint64_t        *value)
+{
+  if (structmap_lookup(cb, &(layer->sm), key, value)) {
+    objtablelayer_cache_put(layer, key, *value);
+    return true;
   }
 
-  return structmap_insert(cb, region, &(layer->sm), key, value);
+  return false;
 }
 
 int
