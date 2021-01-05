@@ -377,22 +377,16 @@ objtable_cache_put(ObjTable        *obj_table,
                    uint64_t         key,
                    uint64_t         value)
 {
-  unsigned int n = obj_table->num_cache_entries++;
-  unsigned int dense_loc = n & (OBJTABLE_CACHE_DENSE_SIZE - 1);
   ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
-  ObjTableDenseEntry *dense_entry = &(obj_table->dense[dense_loc]);
-
-  // Assign key->value mapping, plus cross-link.
-  dense_entry->key = key;
-  dense_entry->n = n;
+  sparse_entry->key = key;
   sparse_entry->value = value;
-  sparse_entry->n = n;
 }
 
 void
 objtable_cache_clear(ObjTable *obj_table)
 {
-  obj_table->num_cache_entries = 0;
+  for (int i = 0; i < OBJTABLE_CACHE_SPARSE_SIZE; ++i)
+    obj_table->sparse[i].key = 0;
 }
 
 void
@@ -402,7 +396,7 @@ objtable_init(ObjTable *obj_table)
   objtablelayer_init(&(obj_table->b));
   objtablelayer_init(&(obj_table->c));
   obj_table->next_obj_id.id  = 1;
-  obj_table->num_cache_entries = 0;
+  objtable_cache_clear(obj_table);
 }
 
 void

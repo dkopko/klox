@@ -251,16 +251,10 @@ typedef struct ObjTableLayer {
 } ObjTableLayer;
 
 
-const int OBJTABLE_CACHE_DENSE_SIZE  = (1 << 10);
 const int OBJTABLE_CACHE_SPARSE_SIZE = (1 << 14);
 
-typedef struct ObjTableDenseEntry {
-  uint64_t key;
-  uint64_t n;
-} ObjTableDenseEntry;
-
 typedef struct ObjTableSparseEntry {
-  uint64_t n;
+  uint64_t key;
   uint64_t value;
 } ObjTableSparseEntry;
 
@@ -269,8 +263,6 @@ typedef struct ObjTable {
   ObjTableLayer       b;
   ObjTableLayer       c;
   ObjID               next_obj_id;
-  unsigned int        num_cache_entries;
-  ObjTableDenseEntry  dense[OBJTABLE_CACHE_DENSE_SIZE];
   ObjTableSparseEntry sparse[OBJTABLE_CACHE_SPARSE_SIZE];
 } ObjTable;
 
@@ -336,38 +328,17 @@ void objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset);
 ObjID objtable_add(ObjTable *obj_table, cb_offset_t offset);
 cb_offset_t objtable_lookup_uncached(ObjTable *obj_table, ObjID obj_id);
 
-extern inline ObjTableDenseEntry*
-objtable_dense_entry(ObjTable *obj_table, uint64_t n) {
-  return &(obj_table->dense[n & (OBJTABLE_CACHE_DENSE_SIZE-1)]);
-}
-
 extern inline ObjTableSparseEntry*
 objtable_sparse_entry(ObjTable *obj_table, uint64_t hashval) {
   return &(obj_table->sparse[hashval & (OBJTABLE_CACHE_SPARSE_SIZE-1)]);
 }
 
-extern inline bool
-objtable_cache_get(ObjTable        *obj_table,
-                   uint64_t         key,
-                   uint64_t        *value)
-{
-  ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
-  ObjTableDenseEntry *dense_entry = objtable_dense_entry(obj_table, sparse_entry->n);
-  if (sparse_entry->n < obj_table->num_cache_entries && dense_entry->n == sparse_entry->n && dense_entry->key == key) {
-    *value = sparse_entry->value;
-    return true;
-  }
-
-  return false;
-}
-
 extern inline cb_offset_t
 objtable_lookup(ObjTable *obj_table, ObjID obj_id)
 {
-  uint64_t v;
-
-  if (objtable_cache_get(obj_table, obj_id.id, &v) && cb_offset_cmp((cb_offset_t)v, thread_objtable_lower_bound) >= 0) {
-    return PURE_OFFSET((cb_offset_t)v);
+  ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(obj_id.id));
+  if (__builtin_expect(!!(sparse_entry->key == obj_id.id), 1)) {
+    return PURE_OFFSET((cb_offset_t)sparse_entry->value);
   }
 
   return objtable_lookup_uncached(obj_table, obj_id);
