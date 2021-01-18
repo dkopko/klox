@@ -234,33 +234,15 @@ struct CBO
 
 typedef struct { uint64_t id; } ObjID;
 
-const int OBJTABLELAYER_DENSE_SIZE = 1000;
-const int OBJTABLELAYER_SPARSE_SIZE = (1<<14);
-
-typedef struct ObjTableLayerEntry {
-  uint64_t key;
-  uint64_t value;
-} ObjTableLayerEntry;
-
 typedef struct ObjTableLayer {
   struct structmap   sm;
-  ObjTableLayerEntry sparse[OBJTABLELAYER_SPARSE_SIZE];
 } ObjTableLayer;
 
-
-const int OBJTABLE_CACHE_SPARSE_SIZE = (1 << 14);
-
-typedef struct ObjTableSparseEntry {
-  uint64_t key;
-  uint64_t value;
-} ObjTableSparseEntry;
-
 typedef struct ObjTable {
-  ObjTableLayer       a;
-  ObjTableLayer       b;
-  ObjTableLayer       c;
-  ObjID               next_obj_id;
-  ObjTableSparseEntry sparse[OBJTABLE_CACHE_SPARSE_SIZE];
+  ObjTableLayer a;
+  ObjTableLayer b;
+  ObjTableLayer c;
+  ObjID         next_obj_id;
 } ObjTable;
 
 int objtablelayer_init(ObjTableLayer *layer);
@@ -283,28 +265,15 @@ void objtablelayer_external_size_adjust(ObjTableLayer *layer, ssize_t adjustment
 extern inline size_t objtablelayer_insertion_alignment_get() { return 8; }
 
 
-int
+extern inline int
 objtablelayer_insert(struct cb        **cb,
-                      struct cb_region  *region,
-                      ObjTableLayer     *layer,
-                      uint64_t           key,
-                      uint64_t           value);
-
-extern inline uint64_t
-hash_key(uint64_t key) {
-  return key;
+                     struct cb_region  *region,
+                     ObjTableLayer     *layer,
+                     uint64_t           key,
+                     uint64_t           value)
+{
+  return structmap_insert(cb, region, &(layer->sm), key, value);
 }
-
-extern inline ObjTableLayerEntry*
-objtablelayer_sparse_entry(ObjTableLayer *layer, uint64_t hashval) {
-  return &(layer->sparse[hashval & (OBJTABLELAYER_SPARSE_SIZE-1)]);
-}
-
-bool
-objtablelayer_lookup_uncached(const struct cb *cb,
-                              ObjTableLayer   *layer,
-                              uint64_t         key,
-                              uint64_t        *value);
 
 extern inline bool
 objtablelayer_lookup(const struct cb *cb,
@@ -312,13 +281,7 @@ objtablelayer_lookup(const struct cb *cb,
                      uint64_t         key,
                      uint64_t        *value)
 {
-  ObjTableLayerEntry *entry = objtablelayer_sparse_entry(layer, hash_key(key));
-  if (__builtin_expect(!!(entry->key == key), 1)) {
-    *value = entry->value;
-    return true;
-  }
-
-  return objtablelayer_lookup_uncached(cb, layer, key, value);
+  return structmap_lookup(cb, &(layer->sm), key, value);
 }
 
 
@@ -328,24 +291,7 @@ int fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap
 void objtable_init(ObjTable *obj_table);
 void objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset);
 ObjID objtable_add(ObjTable *obj_table, cb_offset_t offset);
-cb_offset_t objtable_lookup_uncached(ObjTable *obj_table, ObjID obj_id);
-
-extern inline ObjTableSparseEntry*
-objtable_sparse_entry(ObjTable *obj_table, uint64_t hashval) {
-  return &(obj_table->sparse[hashval & (OBJTABLE_CACHE_SPARSE_SIZE-1)]);
-}
-
-extern inline cb_offset_t
-objtable_lookup(ObjTable *obj_table, ObjID obj_id)
-{
-  ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(obj_id.id));
-  if (__builtin_expect(!!(sparse_entry->key == obj_id.id), 1)) {
-    return PURE_OFFSET((cb_offset_t)sparse_entry->value);
-  }
-
-  return objtable_lookup_uncached(obj_table, obj_id);
-}
-
+cb_offset_t objtable_lookup(ObjTable *obj_table, ObjID obj_id);
 cb_offset_t objtable_lookup_A(ObjTable *obj_table, ObjID obj_id);
 cb_offset_t objtable_lookup_B(ObjTable *obj_table, ObjID obj_id);
 cb_offset_t objtable_lookup_C(ObjTable *obj_table, ObjID obj_id);
@@ -353,7 +299,6 @@ void objtable_invalidate(ObjTable *obj_table, ObjID obj_id);
 void objtable_external_size_adjust_A(ObjTable *obj_table, ssize_t adjustment);
 void objtable_freeze(ObjTable *obj_table);
 size_t objtable_consolidation_size(ObjTable *obj_table);
-void objtable_cache_clear(ObjTable *obj_table);
 
 
 

@@ -261,9 +261,6 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 
 int
 objtablelayer_init(ObjTableLayer *layer) {
-  for (unsigned int i = 0; i < OBJTABLELAYER_SPARSE_SIZE; ++i)
-    layer->sparse[i].key = 0;
-
   structmap_init(&(layer->sm), &klox_allocation_size);
   return 0;
 }
@@ -322,44 +319,6 @@ objtablelayer_external_size_adjust(ObjTableLayer *layer,
   structmap_external_size_adjust(&(layer->sm), adjustment);
 }
 
-extern inline void
-objtablelayer_cache_put(ObjTableLayer *layer,
-                        uint64_t       key,
-                        uint64_t       value)
-{
-  ObjTableLayerEntry *sparse_entry = objtablelayer_sparse_entry(layer, hash_key(key));
-  sparse_entry->key = key;
-  sparse_entry->value = value;
-}
-
-int
-objtablelayer_insert(struct cb        **cb,
-                     struct cb_region  *region,
-                     ObjTableLayer     *layer,
-                     uint64_t           key,
-                     uint64_t           value)
-{
-  int retval = structmap_insert(cb, region, &(layer->sm), key, value);
-
-  objtablelayer_cache_put(layer, key, value);
-
-  return retval;
-}
-
-bool
-objtablelayer_lookup_uncached(const struct cb *cb,
-                              ObjTableLayer   *layer,
-                              uint64_t         key,
-                              uint64_t        *value)
-{
-  if (structmap_lookup(cb, &(layer->sm), key, value)) {
-    objtablelayer_cache_put(layer, key, *value);
-    return true;
-  }
-
-  return false;
-}
-
 int
 methods_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm) {
   structmap_init(sm, &klox_no_external_size2);
@@ -372,23 +331,6 @@ fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm
   return 0;
 }
 
-extern inline void
-objtable_cache_put(ObjTable        *obj_table,
-                   uint64_t         key,
-                   uint64_t         value)
-{
-  ObjTableSparseEntry *sparse_entry = objtable_sparse_entry(obj_table, hash_key(key));
-  sparse_entry->key = key;
-  sparse_entry->value = value;
-}
-
-void
-objtable_cache_clear(ObjTable *obj_table)
-{
-  for (int i = 0; i < OBJTABLE_CACHE_SPARSE_SIZE; ++i)
-    obj_table->sparse[i].key = 0;
-}
-
 void
 objtable_init(ObjTable *obj_table)
 {
@@ -396,7 +338,6 @@ objtable_init(ObjTable *obj_table)
   objtablelayer_init(&(obj_table->b));
   objtablelayer_init(&(obj_table->c));
   obj_table->next_obj_id.id  = 1;
-  objtable_cache_clear(obj_table);
 }
 
 void
@@ -407,8 +348,6 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
 
   ret = objtablelayer_insert(&thread_cb, &thread_region, &(obj_table->a), obj_id.id, offset);
   assert(ret == 0);
-
-  objtable_cache_put(obj_table, obj_id.id, offset);
 }
 
 ObjID
@@ -422,16 +361,14 @@ objtable_add(ObjTable *obj_table, cb_offset_t offset)
   return obj_id;
 }
 
-
 cb_offset_t
-objtable_lookup_uncached(ObjTable *obj_table, ObjID obj_id)
+objtable_lookup(ObjTable *obj_table, ObjID obj_id)
 {
   uint64_t v;
 
   if (objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v) ||
       objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v) ||
       objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v)) {
-    objtable_cache_put(obj_table, obj_id.id, v);
     return PURE_OFFSET((cb_offset_t)v);
   }
 
@@ -934,7 +871,6 @@ gc_main_loop(void)
     objtablelayer_init(&(thread_objtable.a));
     objtablelayer_assign(&(thread_objtable.b), &(curr_request->req.objtable_b));
     objtablelayer_assign(&(thread_objtable.c), &(curr_request->req.objtable_c));
-    objtable_cache_clear(&thread_objtable);
     ret = gc_perform(curr_request);
     if (ret != 0) {
       fprintf(stderr, "Failed to GC via CB.\n");
