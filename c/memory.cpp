@@ -1221,7 +1221,6 @@ void integrateGCResponse(struct gc_request_response *rr) {
   KLOX_TRACE("objtable B %ju -> %ju\n", (uintmax_t)thread_objtable.b.sm.root_node_offset, (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
   objtablelayer_init(&(thread_objtable.c));
   objtablelayer_assign(&(thread_objtable.b), &(rr->resp.objtable_new_b));
-  objtable_cache_clear(&thread_objtable);
   thread_objtable_lower_bound = cb_region_start(&(rr->req.objtable_new_region));
   assert(thread_objtable.b.sm.root_node_offset == CB_NULL || thread_objtable.b.sm.root_node_offset >= rr->req.new_lower_bound);
   assert(thread_objtable.a.sm.root_node_offset == CB_NULL || thread_objtable.a.sm.root_node_offset >= rr->req.new_lower_bound);
