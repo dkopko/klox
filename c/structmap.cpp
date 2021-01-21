@@ -15,6 +15,13 @@ structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value)
   sm->total_external_size = 0;
   sm->height = 0;
   sm->sizeof_value = sizeof_value;
+
+  for (int i = 0; i < (1 << STRUCTMAP_FIRSTLEVEL_BITS); ++i) {
+    sm->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
+    sm->entries[i].item.key = 0;  //FIXME remove
+    sm->entries[i].item.value = 0; //FIXME remove
+  }
+
 }
 
 static int
@@ -38,6 +45,12 @@ structmap_node_alloc(struct cb        **cb,
       for (int i = 0; i < (1 << STRUCTMAP_LEVEL_BITS); ++i) {
         //printf("DANDEBUG setting child offset %p to 1\n", &(sn->children[i]));
         sn->children[i] = 1;
+      }
+
+      for (int i = 0; i < (1 << STRUCTMAP_LEVEL_BITS); ++i) {
+        sn->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
+        sn->entries[i].item.key = 0;  //FIXME remove
+        sn->entries[i].item.value = 0; //FIXME remove
       }
     }
 
@@ -94,6 +107,8 @@ ensure_structmap_modification_size(struct cb        **cb,
   cb_rewind_to(*cb, cursor);
 }
 
+
+
 int
 structmap_insert(struct cb        **cb,
                  struct cb_region  *region,
@@ -112,6 +127,68 @@ structmap_insert(struct cb        **cb,
   // that no CB resizes would happen.
   ensure_structmap_modification_size(cb, region);
 
+  struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+  unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
+
+  //printf("DANDEBUG about to insert key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
+  while (true) {
+    switch (entry->type) {
+      case STRUCTMAP_ENTRY_EMPTY:
+        //printf("DANDEBUG EMPTY inserting key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
+        entry->type = STRUCTMAP_ENTRY_ITEM;
+        entry->item.key = key;
+        entry->item.value = value;
+        structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value));
+        goto exit_loop;
+
+      case STRUCTMAP_ENTRY_ITEM: {
+        //printf("DANDEBUG ITEM inserting key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
+        // Replace the value of the key, if the key is already present.
+        if (entry->item.key == key) {
+          structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value) - (ssize_t)sm->sizeof_value(*cb, entry->item.value));
+          entry->item.value = value;
+          goto exit_loop;
+        }
+
+        // Otherwise, there is a collision in this slot at this level, create
+        // a child node and add the old_key/old_value to it.
+        cb_offset_t child_node_offset = 0; //FIXME no need to waste time initializing
+        ret = structmap_node_alloc(cb, region, &child_node_offset);
+        assert(ret == 0);
+        struct structmap_node *child_node = (struct structmap_node *)cb_at(*cb, child_node_offset);
+        unsigned int child_route = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+        struct structmap_entry *child_entry = &(child_node->entries[child_route]);
+        child_entry->type = STRUCTMAP_ENTRY_ITEM;
+        child_entry->item.key = entry->item.key;
+        child_entry->item.value = entry->item.value;
+
+        // Make the old location of the key/value now point to the nested child node.
+        entry->type = STRUCTMAP_ENTRY_NODE;
+        entry->node.offset = child_node_offset;
+      }
+      /* FALLTHROUGH to process addition of key/value to the new STRUCTMAP_ENTRY_NODE */
+      /* fall through */
+
+      case STRUCTMAP_ENTRY_NODE: {
+        //printf("DANDEBUG NODE inserting key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
+        struct structmap_node *child_node = (struct structmap_node *)cb_at(*cb, entry->node.offset);
+        unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+        entry = &(child_node->entries[child_route]);
+        key_route_base += STRUCTMAP_LEVEL_BITS;
+      }
+      break;
+
+      default:
+        printf("Bogus structmap entry type: %d\n", entry->type);
+        assert(false);
+        goto exit_loop;
+    }
+  }
+
+exit_loop:
+  //printf("DANDEBUG done inserting key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
+
+#if 0
   // Heighten structmap until it encloses this key.
   while ((key & sm->enclosed_mask) != key) {
     structmap_heighten(cb, region, sm);
@@ -136,6 +213,7 @@ structmap_insert(struct cb        **cb,
   n->children[finalpath] = value;
 
   structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value) - (old_value == 1 ? 0 : (ssize_t)sm->sizeof_value(*cb, old_value)));
+#endif
 
   if (sm->lowest_inserted_key == 0 || key < sm->lowest_inserted_key)
     sm->lowest_inserted_key = key;
@@ -147,6 +225,7 @@ structmap_insert(struct cb        **cb,
   {
     uint64_t test_v;
     bool lookup_success = structmap_lookup(*cb, sm, key, &test_v);
+    //printf("lookup_success? %d, same? %d:  #%ju -> @%ju\n", lookup_success, test_v == value, (uintmax_t)key, (uintmax_t)value);
     assert(lookup_success);
     assert(test_v == value);
   }
