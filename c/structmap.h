@@ -13,6 +13,7 @@
 extern __thread void *thread_ring_start;
 extern __thread cb_mask_t thread_ring_mask;
 
+static const int STRUCTMAP_FIRSTLEVEL_BITS = 10;
 static const int STRUCTMAP_LEVEL_BITS = 5;
 
 // The maximum amount structmap_nodes we may need for a modification (insertion)
@@ -28,6 +29,23 @@ static const int STRUCTMAP_MODIFICATION_MAX_NODES = ((64 / STRUCTMAP_LEVEL_BITS 
 
 typedef size_t (*structmap_value_size_t)(const struct cb *cb, uint64_t v);
 
+enum structmap_entry_type
+{
+  STRUCTMAP_ENTRY_EMPTY,
+  STRUCTMAP_ENTRY_ITEM,
+  STRUCTMAP_ENTRY_NODE
+};
+
+struct structmap_entry
+{
+  enum structmap_entry_type type;
+  union
+  {
+    struct { uint64_t key; uint64_t value; } item;
+    struct { uint64_t offset; } node;
+  };
+};
+
 struct structmap
 {
     uint64_t     enclosed_mask;
@@ -39,11 +57,15 @@ struct structmap
     size_t       total_external_size;
     unsigned int height;
     structmap_value_size_t sizeof_value;
+
+    struct structmap_entry entries[1 << STRUCTMAP_FIRSTLEVEL_BITS];
 };
 
 struct structmap_node
 {
     uint64_t children[1 << STRUCTMAP_LEVEL_BITS];
+
+    struct structmap_entry entries[1 << STRUCTMAP_LEVEL_BITS];
 };
 
 
@@ -62,6 +84,36 @@ structmap_lookup(const struct cb        *cb,
                  uint64_t                key,
                  uint64_t               *value)
 {
+
+  const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+  unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
+
+  while (true) {
+    switch (entry->type) {
+      case STRUCTMAP_ENTRY_EMPTY:
+        return false;
+
+      case STRUCTMAP_ENTRY_ITEM:
+        if (key == entry->item.key) {
+          *value = entry->item.value;
+          return true;
+        } else {
+          return false;
+        }
+
+      case STRUCTMAP_ENTRY_NODE: {
+        const struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
+        unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+        entry = &(child_node->entries[child_route]);
+        key_route_base += STRUCTMAP_LEVEL_BITS;
+      }
+      break;
+    }
+  }
+
+  return false;
+
+#if 0
   if ((key & sm->enclosed_mask) != key)
     return false;
 
@@ -83,6 +135,7 @@ structmap_lookup(const struct cb        *cb,
   *value = tmpval;
 
   return true;
+#endif
 }
 
 extern inline bool
