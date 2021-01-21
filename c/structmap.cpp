@@ -6,20 +6,15 @@
 void
 structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value)
 {
-  sm->enclosed_mask = 0;
-  sm->shl = 0;
   sm->lowest_inserted_key = 0;
   sm->highest_inserted_key = 0;
   sm->root_node_offset = CB_NULL;
   sm->node_count = 0;
   sm->total_external_size = 0;
-  sm->height = 0;
   sm->sizeof_value = sizeof_value;
 
   for (int i = 0; i < (1 << STRUCTMAP_FIRSTLEVEL_BITS); ++i) {
     sm->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
-    sm->entries[i].item.key = 0;  //FIXME remove
-    sm->entries[i].item.value = 0; //FIXME remove
   }
 
 }
@@ -43,45 +38,13 @@ structmap_node_alloc(struct cb        **cb,
     {
       struct structmap_node *sn = (struct structmap_node *)cb_at(*cb, new_node_offset);
       for (int i = 0; i < (1 << STRUCTMAP_LEVEL_BITS); ++i) {
-        //printf("DANDEBUG setting child offset %p to 1\n", &(sn->children[i]));
-        sn->children[i] = 1;
-      }
-
-      for (int i = 0; i < (1 << STRUCTMAP_LEVEL_BITS); ++i) {
         sn->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
-        sn->entries[i].item.key = 0;  //FIXME remove
-        sn->entries[i].item.value = 0; //FIXME remove
       }
     }
 
     *node_offset = new_node_offset;
 
     return 0;
-}
-
-static void
-structmap_heighten(struct cb        **cb,
-                   struct cb_region  *region,
-                   struct structmap  *sm)
-{
-  cb_offset_t new_root_node_offset;
-  int ret;
-
-  (void) ret;
-
-  ret = structmap_node_alloc(cb, region, &new_root_node_offset);
-  assert(ret == 0);
-  ++(sm->node_count);
-
-  struct structmap_node *new_root_node = (struct structmap_node *)cb_at(*cb, new_root_node_offset);
-  new_root_node->children[0] = sm->root_node_offset;
-  //KLOX_TRACE("DANDEBUG setting new_root_node->children[0] = sm->root_node_offset%ju\n", (uintmax_t)sm->root_node_offset);
-
-  sm->root_node_offset = new_root_node_offset;
-  if (sm->enclosed_mask) { sm->shl += STRUCTMAP_LEVEL_BITS; }
-  sm->enclosed_mask = (sm->enclosed_mask << STRUCTMAP_LEVEL_BITS) | (((uint64_t)1 << STRUCTMAP_LEVEL_BITS) - 1);
-  ++(sm->height);
-  //KLOX_TRACE("DANDEBUG heightened structmap %p to new height %u, new enclosed_mask: %jx\n", sm, sm->height, (uintmax_t)sm->enclosed_mask);
 }
 
 static void
@@ -130,11 +93,9 @@ structmap_insert(struct cb        **cb,
   struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
   unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
 
-  //printf("DANDEBUG about to insert key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
   while (true) {
     switch (entry->type) {
       case STRUCTMAP_ENTRY_EMPTY:
-        //printf("DANDEBUG EMPTY inserting key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
         entry->type = STRUCTMAP_ENTRY_ITEM;
         entry->item.key = key;
         entry->item.value = value;
@@ -142,7 +103,6 @@ structmap_insert(struct cb        **cb,
         goto exit_loop;
 
       case STRUCTMAP_ENTRY_ITEM: {
-        //printf("DANDEBUG ITEM inserting key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
         // Replace the value of the key, if the key is already present.
         if (entry->item.key == key) {
           structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value) - (ssize_t)sm->sizeof_value(*cb, entry->item.value));
@@ -152,9 +112,10 @@ structmap_insert(struct cb        **cb,
 
         // Otherwise, there is a collision in this slot at this level, create
         // a child node and add the old_key/old_value to it.
-        cb_offset_t child_node_offset = 0; //FIXME no need to waste time initializing
+        cb_offset_t child_node_offset = CB_NULL; //FIXME shouldn't have to initialize
         ret = structmap_node_alloc(cb, region, &child_node_offset);
         assert(ret == 0);
+        ++(sm->node_count);
         struct structmap_node *child_node = (struct structmap_node *)cb_at(*cb, child_node_offset);
         unsigned int child_route = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
         struct structmap_entry *child_entry = &(child_node->entries[child_route]);
@@ -170,7 +131,6 @@ structmap_insert(struct cb        **cb,
       /* fall through */
 
       case STRUCTMAP_ENTRY_NODE: {
-        //printf("DANDEBUG NODE inserting key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
         struct structmap_node *child_node = (struct structmap_node *)cb_at(*cb, entry->node.offset);
         unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
         entry = &(child_node->entries[child_route]);
@@ -178,43 +138,16 @@ structmap_insert(struct cb        **cb,
       }
       break;
 
+#ifndef NDEBUG
       default:
         printf("Bogus structmap entry type: %d\n", entry->type);
         assert(false);
         goto exit_loop;
+#endif
     }
   }
 
 exit_loop:
-  //printf("DANDEBUG done inserting key: %ju, key_route_base: %ju\n", (uintmax_t)key, (uintmax_t)key_route_base);
-
-#if 0
-  // Heighten structmap until it encloses this key.
-  while ((key & sm->enclosed_mask) != key) {
-    structmap_heighten(cb, region, sm);
-  }
-
-  struct structmap_node *n = (struct structmap_node *)cb_at(*cb, sm->root_node_offset);
-  for (int shl = sm->shl; shl; shl -= STRUCTMAP_LEVEL_BITS) {
-    int path = (key >> shl) & (((uint64_t)1 << STRUCTMAP_LEVEL_BITS) - 1);
-    cb_offset_t *child_offset = &(n->children[path]);
-    assert(*child_offset != 0);
-
-    if (*child_offset == 1) {
-      ret = structmap_node_alloc(cb, region, child_offset);
-      assert(ret == 0);
-      ++(sm->node_count);
-    }
-
-    n = (struct structmap_node *)cb_at(*cb, *child_offset);
-  }
-  int finalpath = key & (((uint64_t)1 << STRUCTMAP_LEVEL_BITS) - 1);
-  uint64_t old_value = n->children[finalpath];
-  n->children[finalpath] = value;
-
-  structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value) - (old_value == 1 ? 0 : (ssize_t)sm->sizeof_value(*cb, old_value)));
-#endif
-
   if (sm->lowest_inserted_key == 0 || key < sm->lowest_inserted_key)
     sm->lowest_inserted_key = key;
 
