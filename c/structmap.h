@@ -17,15 +17,12 @@ static const int STRUCTMAP_FIRSTLEVEL_BITS = 10;
 static const int STRUCTMAP_LEVEL_BITS = 5;
 
 // The maximum amount structmap_nodes we may need for a modification (insertion)
-// so that no CB resizes will happen.  This is `ceil(64 / STRUCTMAP_LEVEL_BITS)`
-// structmap_node levels times 2 (heightening to max height, before descending
-// to max depth) minus 1 (because the highest node is shared across the
-// ascending and descending paths).
-static const int STRUCTMAP_MODIFICATION_MAX_NODES = ((64 / STRUCTMAP_LEVEL_BITS + (int)!!(64 % STRUCTMAP_LEVEL_BITS)) * 2 - 1);
+// so that no CB resizes will happen.  This is ceil((64 - STRUCTMAP_FIRSTLEVEL_BITS) / STRUCTMAP_LEVEL_BITS).
+static const int STRUCTMAP_MODIFICATION_MAX_NODES = ((64 - STRUCTMAP_FIRSTLEVEL_BITS) / STRUCTMAP_LEVEL_BITS) + (int)!!((64 - STRUCTMAP_FIRSTLEVEL_BITS) % STRUCTMAP_LEVEL_BITS);
 
 //NOTES:
 // 1) Neither keys nor values are allowed to be 0, as this value is reserved
-//    for NULL-like sentinels.
+//    for NULL-like sentinels.  FIXME is this still true after the revision toward the Bagwell-like implementation?
 
 typedef size_t (*structmap_value_size_t)(const struct cb *cb, uint64_t v);
 
@@ -48,14 +45,11 @@ struct structmap_entry
 
 struct structmap
 {
-    uint64_t     enclosed_mask;
-    int          shl;
     uint64_t     lowest_inserted_key;
     uint64_t     highest_inserted_key;
-    cb_offset_t  root_node_offset;
+    cb_offset_t  root_node_offset; //FIXME remove, no longer used
     unsigned int node_count;
     size_t       total_external_size;
-    unsigned int height;
     structmap_value_size_t sizeof_value;
 
     struct structmap_entry entries[1 << STRUCTMAP_FIRSTLEVEL_BITS];
@@ -63,8 +57,6 @@ struct structmap
 
 struct structmap_node
 {
-    uint64_t children[1 << STRUCTMAP_LEVEL_BITS];
-
     struct structmap_entry entries[1 << STRUCTMAP_LEVEL_BITS];
 };
 
@@ -108,34 +100,17 @@ structmap_lookup(const struct cb        *cb,
         key_route_base += STRUCTMAP_LEVEL_BITS;
       }
       break;
+
+#ifndef NDEBUG
+      default:
+        printf("Bogus structmap entry type: %d\n", entry->type);
+        assert(false);
+        break;
+#endif
     }
   }
 
   return false;
-
-#if 0
-  if ((key & sm->enclosed_mask) != key)
-    return false;
-
-  struct structmap_node *n;
-  uint64_t child = sm->root_node_offset;
-  int path;
-
-  for (int shl = sm->shl; shl; shl -= STRUCTMAP_LEVEL_BITS) {
-    n = (struct structmap_node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
-    path = (key >> shl) & (((uint64_t)1 << STRUCTMAP_LEVEL_BITS) - 1);
-    child = n->children[path];
-    if (child == 1) { return false; }
-  }
-  n = (struct structmap_node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
-  path = key & (((uint64_t)1 << STRUCTMAP_LEVEL_BITS) - 1);
-  uint64_t tmpval = n->children[path];
-  if (tmpval == 1) { return false; }
-
-  *value = tmpval;
-
-  return true;
-#endif
 }
 
 extern inline bool
