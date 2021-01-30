@@ -23,6 +23,10 @@ extern __thread bool              on_main_thread;
 extern __thread bool              can_print;
 extern __thread unsigned int      gc_integration_epoch;
 extern __thread cb_offset_t       thread_objtable_lower_bound;
+extern __thread cb_offset_t       a_read_cutoff;
+extern __thread cb_offset_t       a_write_cutoff;
+extern __thread cb_offset_t       b_read_cutoff;
+extern __thread cb_offset_t       c_read_cutoff;
 
 // GC thread state.
 //FIXME make these to gc-thread-local.
@@ -451,6 +455,9 @@ struct gc_request
   cb_offset_t       new_lower_bound;
   size_t            bytes_allocated_before_gc;
   int               exec_phase;
+
+  cb_offset_t       b_read_cutoff;
+  cb_offset_t       c_read_cutoff;
 
   //Objtable
   struct cb_region  objtable_new_region;
