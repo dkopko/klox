@@ -112,6 +112,10 @@ struct cbp
   {
     assert((offset_ == CB_NULL && pointer_ == NULL) || pointer_ == cb_at(cb_, offset_));
   }
+
+  bool is_nil() {
+    return !pointer_;
+  }
 };
 
 template<typename T>
@@ -124,6 +128,8 @@ struct CBP : cbp
   CBP(cb_offset_t offset, struct cb *cb) : cbp(offset, cb) { }
 
   CBP(CBP<T> const &rhs) : cbp(rhs) { }
+
+  CBP<T>& operator=(const CBP<T> &rhs) = default;
 
   const T* cp() {
     return static_cast<const T*>(pointer_);
@@ -254,9 +260,10 @@ int objtablelayer_assign(ObjTableLayer *dest, ObjTableLayer *src);
 
 typedef int (*objtablelayer_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
 int objtablelayer_traverse(const struct cb                **cb,
-                            ObjTableLayer                   *layer,
-                            objtablelayer_traverse_func_t   func,
-                            void                            *closure);
+                           cb_offset_t                 read_cutoff,
+                           ObjTableLayer                   *layer,
+                           objtablelayer_traverse_func_t   func,
+                           void                            *closure);
 
 size_t objtablelayer_external_size(ObjTableLayer *layer);
 size_t objtablelayer_internal_size(ObjTableLayer *layer);
@@ -272,20 +279,23 @@ extern inline size_t objtablelayer_insertion_alignment_get() { return 8; }
 extern inline int
 objtablelayer_insert(struct cb        **cb,
                      struct cb_region  *region,
+                     cb_offset_t        read_cutoff,
+                     cb_offset_t        write_cutoff,
                      ObjTableLayer     *layer,
                      uint64_t           key,
                      uint64_t           value)
 {
-  return structmap_insert(cb, region, &(layer->sm), key, value);
+  return structmap_insert(cb, region, read_cutoff, write_cutoff, &(layer->sm), key, value);
 }
 
 extern inline bool
 objtablelayer_lookup(const struct cb *cb,
+                     cb_offset_t      read_cutoff,
                      ObjTableLayer   *layer,
                      uint64_t         key,
                      uint64_t        *value)
 {
-  return structmap_lookup(cb, &(layer->sm), key, value);
+  return structmap_lookup(cb, read_cutoff, &(layer->sm), key, value);
 }
 
 

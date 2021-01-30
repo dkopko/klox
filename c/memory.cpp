@@ -291,12 +291,13 @@ structmapTraversalGray(uint64_t k, uint64_t v, void *closure)
   return 0;
 }
 
-static void grayStructmap(const struct structmap *sm) {
+static void grayStructmap(const struct structmap *sm, cb_offset_t read_cutoff) {
   int ret;
 
   (void)ret;
 
   ret = structmap_traverse((const struct cb **)&thread_cb,
+                           read_cutoff,
                            sm,
                            &structmapTraversalGray,
                            NULL);
@@ -333,7 +334,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
       const ObjClass* klass = (const ObjClass*)object;
       grayObject(klass->name.id());
       grayObject(klass->superclass.id());
-      grayStructmap(&(klass->methods_sm));
+      grayStructmap(&(klass->methods_sm), (found_in_b ? b_read_cutoff: c_read_cutoff));
 
       //NOTE: Classes are represented by ObjClass layers.  The garbage
       // collector only deals with regions B and C.  If retrieval of the
@@ -343,7 +344,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
         const ObjClass* klass_C = (const ObjClass*)objectOID.clipC().cp();
         if (klass_C) {
           KLOX_TRACE("found backing class for #%ju\n", objectOID.id().id);
-          grayStructmap(&(klass_C->methods_sm));
+          grayStructmap(&(klass_C->methods_sm), c_read_cutoff);
         }
       }
       break;
@@ -370,7 +371,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
     case OBJ_INSTANCE: {
       const ObjInstance* instance = (const ObjInstance*)object;
       grayObject(instance->klass.id());
-      grayStructmap(&(instance->fields_sm));
+      grayStructmap(&(instance->fields_sm), (found_in_b ? b_read_cutoff : c_read_cutoff));
 
       //NOTE: Instances are represented by ObjInstance layers.  The garbage
       // collector only deals with regions B and C.  If retrieval of the
@@ -380,7 +381,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
         const ObjInstance* instance_C = (const ObjInstance*)objectOID.clipC().cp();
         if (instance_C) {
           KLOX_TRACE("found backing instance for #%ju\n", objectOID.id().id);
-          grayStructmap(&(instance_C->fields_sm));
+          grayStructmap(&(instance_C->fields_sm), c_read_cutoff);
         }
       }
       break;
@@ -633,6 +634,8 @@ copy_entry_to_sm(uint64_t k, uint64_t v, void *closure)
 
   ret = structmap_insert(cl->dest_cb,
                          cl->dest_region,
+                         a_read_cutoff,
+                         a_write_cutoff,
                          cl->dest_sm,
                          k,
                          v);
@@ -650,9 +653,11 @@ copy_entry_to_sm(uint64_t k, uint64_t v, void *closure)
 
 cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_offset_t object_offset) {
   assert(gc_phase == GC_PHASE_CONSOLIDATE);
+  assert(cb_offset_cmp(object_offset, a_read_cutoff) < 0);  //clones should only happen of B and C region objects.
 
   CBO<Obj> srcCBO = object_offset;
   CBO<Obj> cloneCBO = deriveMutableObjectLayer(cb, region, id, object_offset);
+  cb_offset_t read_cutoff = (cb_offset_cmp(object_offset, b_read_cutoff) >= 0 ? b_read_cutoff : c_read_cutoff);
   int ret;
 
   (void)ret;
@@ -676,6 +681,7 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
       };
 
       ret = structmap_traverse((const struct cb **)cb,
+                               read_cutoff,
                                &(srcClass->methods_sm),
                                copy_entry_to_sm,
                                &cl);
@@ -694,6 +700,7 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
       };
 
       ret = structmap_traverse((const struct cb **)cb,
+                               read_cutoff,
                                &(srcInstance->fields_sm),
                                copy_entry_to_sm,
                                &cl);
@@ -819,16 +826,19 @@ void printStateOfWorld(const char *desc) {
              thread_objtable.c.sm.root_node_offset,
              objtablelayer_size(&(thread_objtable.c)));
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
+                               a_read_cutoff,
                                &(thread_objtable.a),
                                &printObjtableTraversal,
                                (void*)"A");
   assert(ret == 0);
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
+                               b_read_cutoff,
                                &(thread_objtable.b),
                                &printObjtableTraversal,
                                (void*)"B");
   assert(ret == 0);
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
+                               c_read_cutoff,
                                &(thread_objtable.c),
                                &printObjtableTraversal,
                                (void*)"C");

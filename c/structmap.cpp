@@ -70,19 +70,44 @@ ensure_structmap_modification_size(struct cb        **cb,
   cb_rewind_to(*cb, cursor);
 }
 
-
-
-int
-structmap_insert(struct cb        **cb,
-                 struct cb_region  *region,
-                 struct structmap  *sm,
-                 uint64_t           key,
-                 uint64_t           value)
+static int
+structmap_select_modifiable_node(struct cb        **cb,
+                                 struct cb_region  *region,
+                                 cb_offset_t        write_cutoff,
+                                 cb_offset_t       *node_offset)
 {
   int ret;
 
   (void)ret;
 
+  if (cb_offset_cmp(write_cutoff, *node_offset) <= 0)
+    return 0;
+
+  struct structmap_node *old_node = (struct structmap_node *)cb_at(*cb, *node_offset);
+
+  ret = structmap_node_alloc(cb, region, node_offset);
+  assert(ret == 0);
+
+  struct structmap_node *new_node = (struct structmap_node *)cb_at(*cb, *node_offset);
+  memcpy(new_node, old_node, sizeof(*old_node));
+  return 0;
+}
+
+int
+structmap_insert(struct cb        **cb,
+                 struct cb_region  *region,
+                 cb_offset_t        read_cutoff,
+                 cb_offset_t        write_cutoff,
+                 struct structmap  *sm,
+                 uint64_t           key,
+                 uint64_t           value)
+{
+  //FIXME use read_cutoff/write_cutoff
+  int ret;
+
+  (void)ret;
+
+  assert(cb_offset_cmp(read_cutoff, write_cutoff) <= 0);
   assert(key > 0);
 
   // We do not want to have to re-sample pointers, so reserve the maximum amount
@@ -157,7 +182,7 @@ exit_loop:
 #ifndef NDEBUG
   {
     uint64_t test_v;
-    bool lookup_success = structmap_lookup(*cb, sm, key, &test_v);
+    bool lookup_success = structmap_lookup(*cb, write_cutoff, sm, key, &test_v);
     //printf("lookup_success? %d, same? %d:  #%ju -> @%ju\n", lookup_success, test_v == value, (uintmax_t)key, (uintmax_t)value);
     assert(lookup_success);
     assert(test_v == value);
@@ -169,6 +194,7 @@ exit_loop:
 
 int
 structmap_traverse(const struct cb           **cb,
+                   cb_offset_t                 read_cutoff,
                    const struct structmap     *sm,
                    structmap_traverse_func_t   func,
                    void                       *closure)
@@ -181,7 +207,7 @@ structmap_traverse(const struct cb           **cb,
        k > 0 && k <= e;
        ++k)
   {
-    bool lookup_success = structmap_lookup(*cb, sm, k, &v);
+    bool lookup_success = structmap_lookup(*cb, read_cutoff, sm, k, &v);
     if (lookup_success) {
       func(k, v, closure);
     }

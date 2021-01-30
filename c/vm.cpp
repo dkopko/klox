@@ -418,9 +418,9 @@ static bool instanceFieldGet(OID<ObjInstance> instance, Value key, Value *value)
   uint64_t k = AS_OBJ_ID(key).id;
   uint64_t v;
 
-  if (((inst = instance.clipA().cp()) && structmap_lookup(thread_cb, &(inst->fields_sm), k, &v))
-      || ((inst = instance.clipB().cp()) && structmap_lookup(thread_cb, &(inst->fields_sm), k, &v))
-      || ((inst = instance.clipC().cp()) && structmap_lookup(thread_cb, &(inst->fields_sm), k, &v)))
+  if (((inst = instance.clipA().cp()) && structmap_lookup(thread_cb, a_read_cutoff, &(inst->fields_sm), k, &v))
+      || ((inst = instance.clipB().cp()) && structmap_lookup(thread_cb, b_read_cutoff, &(inst->fields_sm), k, &v))
+      || ((inst = instance.clipC().cp()) && structmap_lookup(thread_cb, c_read_cutoff, &(inst->fields_sm), k, &v)))
   {
     value->val = v;
     return true;
@@ -452,6 +452,8 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
 
   ret = structmap_insert(&thread_cb,
                          &thread_region,
+                         a_read_cutoff,
+                         a_write_cutoff,
                          &fields_sm,
                          k,
                          v);
@@ -477,9 +479,9 @@ static bool classMethodGet(OID<ObjClass> klass, Value key, Value *value) {
   uint64_t k = AS_OBJ_ID(key).id;
   uint64_t v;
 
-  if (((c = klass.clipA().cp()) && structmap_lookup(thread_cb, &(c->methods_sm), k, &v))
-      || ((c = klass.clipB().cp()) && structmap_lookup(thread_cb, &(c->methods_sm), k, &v))
-      || ((c = klass.clipC().cp()) && structmap_lookup(thread_cb, &(c->methods_sm), k, &v)))
+  if (((c = klass.clipA().cp()) && structmap_lookup(thread_cb, a_read_cutoff, &(c->methods_sm), k, &v))
+      || ((c = klass.clipB().cp()) && structmap_lookup(thread_cb, b_read_cutoff, &(c->methods_sm), k, &v))
+      || ((c = klass.clipC().cp()) && structmap_lookup(thread_cb, c_read_cutoff, &(c->methods_sm), k, &v)))
   {
     value->val = v;
     return true;
@@ -512,6 +514,8 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
 
   ret = structmap_insert(&thread_cb,
                          &thread_region,
+                         a_read_cutoff,
+                         a_write_cutoff,
                          &methods_sm,
                          k,
                          v);
@@ -550,6 +554,8 @@ structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
 
   ret = structmap_insert(&thread_cb,
                          &thread_region,
+                         a_read_cutoff,
+                         a_write_cutoff,
                          dest_sm,
                          k,
                          v);
@@ -568,13 +574,26 @@ static void classMethodsAddAll(OID<ObjClass> subclassOID, OID<ObjClass> supercla
   //FIXME this method used to have a resize-under-traversal issue which may still exist for bst traversals elsewhere
 
   RCBP<ObjClass> subclass = subclassOID.mlip();
+  CBP<const ObjClass> superclassCBP = superclassOID.clipA();
   struct structmap superclass_methods_sm_tmp = superclassOID.clip().cp()->methods_sm;
   struct structmap subclass_methods_sm_tmp = subclass.cp()->methods_sm;
+  bool found_in_a = false;
+  bool found_in_b = false;
   int ret;
 
   (void)ret;
 
+  if (!superclassCBP.is_nil()) {
+    found_in_a = true;
+  } else {
+    superclassCBP = superclassOID.clipB();
+    if (!superclassCBP.is_nil()) {
+      found_in_b = true;
+    }
+  }
+
   ret = structmap_traverse((const struct cb **)&thread_cb,
+                           (found_in_a ? a_read_cutoff : found_in_b ? b_read_cutoff : c_read_cutoff),
                            &superclass_methods_sm_tmp,
                            &structmapTraversalAdd,
                            &subclass_methods_sm_tmp);

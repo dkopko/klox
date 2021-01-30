@@ -66,16 +66,20 @@ void structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value);
 int
 structmap_insert(struct cb        **cb,
                  struct cb_region  *region,
+                 cb_offset_t        read_cutoff,
+                 cb_offset_t        write_cutoff,
                  struct structmap  *sm,
                  uint64_t           key,
                  uint64_t           value);
 
 extern inline bool
 structmap_lookup(const struct cb        *cb,
+                 cb_offset_t             read_cutoff,
                  const struct structmap *sm,
                  uint64_t                key,
                  uint64_t               *value)
 {
+  //FIXME use read_cutoff
 
   const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
   unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
@@ -115,17 +119,19 @@ structmap_lookup(const struct cb        *cb,
 
 extern inline bool
 structmap_contains_key(const struct cb        *cb,
+                       cb_offset_t             read_cutoff,
                        const struct structmap *sm,
                        uint64_t                key)
 {
   uint64_t v;
-  return (structmap_lookup(cb, sm, key, &v) == true);
+  return (structmap_lookup(cb, read_cutoff, sm, key, &v) == true);
 }
 
 typedef int (*structmap_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
 
 int
 structmap_traverse(const struct cb           **cb,
+                   cb_offset_t                 read_cutoff,
                    const struct structmap     *sm,
                    structmap_traverse_func_t   func,
                    void                       *closure);
