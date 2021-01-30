@@ -991,6 +991,7 @@ void collectGarbage() {
 
   cb_offset_t this_point_of_gc = cb_cursor(thread_cb);
   cb_offset_t new_lower_bound = this_point_of_gc;
+  a_write_cutoff = new_lower_bound;
 
   //NOTE: The loop here is to cover the exceedingly rare theoretical
   // circumstance that a gc_request_response be allocated to the same raw
@@ -1035,6 +1036,9 @@ void collectGarbage() {
   rr.mp()->req.new_lower_bound           = new_lower_bound;
   rr.mp()->req.bytes_allocated_before_gc = bytes_allocated_before_gc;
   rr.mp()->req.exec_phase                = exec_phase;
+
+  rr.mp()->req.b_read_cutoff = b_read_cutoff;
+  rr.mp()->req.c_read_cutoff = c_read_cutoff;
 
   // Prepare condensing objtable B+C
   ret = logged_region_create(&thread_cb,
@@ -1225,6 +1229,7 @@ void integrateGCResponse(struct gc_request_response *rr) {
   objtablelayer_init(&(thread_objtable.c));
   objtablelayer_assign(&(thread_objtable.b), &(rr->resp.objtable_new_b));
   thread_objtable_lower_bound = cb_region_start(&(rr->req.objtable_new_region));
+  a_read_cutoff = rr->req.new_lower_bound;
   assert(thread_objtable.b.sm.root_node_offset == CB_NULL || thread_objtable.b.sm.root_node_offset >= rr->req.new_lower_bound);
   assert(thread_objtable.a.sm.root_node_offset == CB_NULL || thread_objtable.a.sm.root_node_offset >= rr->req.new_lower_bound);
 

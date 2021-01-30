@@ -32,6 +32,10 @@ __thread cb_offset_t       pinned_lower_bound   = CB_NULL;
 __thread bool              on_main_thread = false;
 __thread bool              can_print      = false;
 __thread cb_offset_t       thread_objtable_lower_bound;
+__thread cb_offset_t       a_read_cutoff;
+__thread cb_offset_t       a_write_cutoff;
+__thread cb_offset_t       b_read_cutoff;
+__thread cb_offset_t       c_read_cutoff;
 
 static __thread struct rcbp      *thread_rcbp_list        = NULL;
 
@@ -871,6 +875,10 @@ gc_main_loop(void)
     objtablelayer_init(&(thread_objtable.a));
     objtablelayer_assign(&(thread_objtable.b), &(curr_request->req.objtable_b));
     objtablelayer_assign(&(thread_objtable.c), &(curr_request->req.objtable_c));
+    a_read_cutoff = curr_request->req.gc_dest_region_start;
+    a_write_cutoff = curr_request->req.gc_dest_region_start;
+    b_read_cutoff = curr_request->req.b_read_cutoff;
+    c_read_cutoff = curr_request->req.c_read_cutoff;
     ret = gc_perform(curr_request);
     if (ret != 0) {
       fprintf(stderr, "Failed to GC via CB.\n");
