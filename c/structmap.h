@@ -79,8 +79,6 @@ structmap_lookup(const struct cb        *cb,
                  uint64_t                key,
                  uint64_t               *value)
 {
-  //FIXME use read_cutoff
-
   const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
   unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
 
@@ -98,6 +96,7 @@ structmap_lookup(const struct cb        *cb,
         }
 
       case STRUCTMAP_ENTRY_NODE: {
+        if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return false; }
         const struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
         unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
         entry = &(child_node->entries[child_route]);
