@@ -156,6 +156,7 @@ structmap_insert(struct cb        **cb,
       /* fall through */
 
       case STRUCTMAP_ENTRY_NODE: {
+        structmap_select_modifiable_node(cb, region, write_cutoff, &(entry->node.offset));
         struct structmap_node *child_node = (struct structmap_node *)cb_at(*cb, entry->node.offset);
         unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
         entry = &(child_node->entries[child_route]);

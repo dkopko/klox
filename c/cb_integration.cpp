@@ -432,7 +432,7 @@ objtable_freeze(ObjTable *obj_table)
   //assert(num_entries(obj_table->c) == 0); //FIXME create this check
   obj_table->c = obj_table->b;
   obj_table->b = obj_table->a;
-  objtablelayer_init(&(obj_table->a));
+  objtablelayer_init(&(obj_table->a)); //FIXME this ought to be able to be removed!
 }
 
 size_t
