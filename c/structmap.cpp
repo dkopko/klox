@@ -32,6 +32,7 @@ structmap_node_alloc(struct cb        **cb,
                              &new_node_offset,
                              cb_alignof(struct structmap_node),
                              sizeof(struct structmap_node));
+    if (ret != CB_SUCCESS) { printf("DANDEBUGwtf4\n"); abort(); }
     if (ret != CB_SUCCESS)
         return ret;
 
@@ -53,6 +54,7 @@ ensure_structmap_modification_size(struct cb        **cb,
 {
   int     nodes_left = STRUCTMAP_MODIFICATION_MAX_NODES;
   ssize_t size_left_in_region = (ssize_t)(cb_region_end(region) - cb_region_cursor(region) - (alignof(struct structmap_node) - 1));
+  int ret;
 
   //First, check whether we have enough size in this region alone.
   if (size_left_in_region > 0) {
@@ -66,7 +68,8 @@ ensure_structmap_modification_size(struct cb        **cb,
   struct cb_region region_tmp = *region;
   cb_offset_t      offset_tmp;
 
-  cb_region_memalign(cb, &region_tmp, &offset_tmp, alignof(struct structmap_node), nodes_left * sizeof(struct structmap_node));
+  ret = cb_region_memalign(cb, &region_tmp, &offset_tmp, alignof(struct structmap_node), nodes_left * sizeof(struct structmap_node));
+  if (ret != CB_SUCCESS) { printf("DANDEBUGwtf5\n"); abort(); }
   cb_rewind_to(*cb, cursor);
 }
 

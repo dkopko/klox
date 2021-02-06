@@ -124,6 +124,7 @@ cb_offset_t reallocate_within(struct cb **cb, struct cb_region *region, cb_offse
                              &new_offset,
                              alignment,
                              needed_contiguous_size);
+    if (ret != CB_SUCCESS) { printf("DANDEBUGwtf1\n"); abort(); }
     assert(ret == CB_SUCCESS);
 
     new_offset = cb_offset_aligned_gte(new_offset + header_size, alignment);
@@ -737,6 +738,7 @@ void freezeARegions(cb_offset_t new_lower_bound) {
                            &(vm.tristack.abo),
                            cb_alignof(Value),
                            sizeof(Value) * STACK_MAX);
+  if (ret != CB_SUCCESS) { printf("DANDEBUGwtf2\n"); abort(); }
   vm.tristack.abi = vm.tristack.stackDepth;
   assert(vm.tristack.abo >= new_lower_bound);
   tristack_recache(&(vm.tristack), thread_cb);
@@ -753,6 +755,7 @@ void freezeARegions(cb_offset_t new_lower_bound) {
                            &(vm.triframes.abo),
                            cb_alignof(CallFrame),
                            sizeof(CallFrame) * FRAMES_MAX);
+  if (ret != CB_SUCCESS) { printf("DANDEBUGwtf3\n"); abort(); }
   vm.triframes.abi = vm.triframes.frameCount;
   assert(vm.triframes.abo >= new_lower_bound);
   triframes_recache(&(vm.triframes), thread_cb);

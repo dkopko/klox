@@ -36,6 +36,7 @@ tristack_reset(TriStack *ts) {
                            &new_offset,
                            cb_alignof(Value),
                            sizeof(Value) * STACK_MAX);
+  if (ret != CB_SUCCESS) { printf("DANDEBUGwtf6\n"); abort(); }
   assert(ret == 0);
 
   ts->abo = new_offset;
@@ -129,6 +130,7 @@ triframes_reset(TriFrames *tf) {
                            &new_offset,
                            cb_alignof(CallFrame),
                            sizeof(CallFrame) * FRAMES_MAX);
+  if (ret != CB_SUCCESS) { printf("DANDEBUGwtf7\n"); abort(); }
   assert(ret == 0);
 
   tf->abo = new_offset;
