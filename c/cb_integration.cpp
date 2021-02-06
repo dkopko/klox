@@ -1206,6 +1206,9 @@ copy_objtable_c_not_in_b(uint64_t  key,
       new_sm_size = structmap_size(&(classB->methods_sm));
 
       external_size_adjustment = (ssize_t)new_sm_size - (ssize_t)old_sm_size;
+
+      DEBUG_ONLY(ssize_t merge_bytes = (ssize_t)(cb_region_cursor(cl->dest_region) - c0));
+      assert(merge_bytes <= external_size_adjustment);
       DEBUG_ONLY(external_used_bytes = external_size_adjustment);
     } else if (bEntryObj.clp().cp()->type == OBJ_INSTANCE && cEntryObj.clp().cp()->type == OBJ_INSTANCE) {
       //Copy C ObjInstance's fields WHICH DO NOT EXIST IN B ObjInstance's
@@ -1233,6 +1236,9 @@ copy_objtable_c_not_in_b(uint64_t  key,
       new_sm_size = structmap_size(&(instanceB->fields_sm));
 
       external_size_adjustment = (ssize_t)new_sm_size - (ssize_t)old_sm_size;
+
+      DEBUG_ONLY(ssize_t merge_bytes = (ssize_t)(cb_region_cursor(cl->dest_region) - c0));
+      assert(merge_bytes <= external_size_adjustment);
       DEBUG_ONLY(external_used_bytes = external_size_adjustment);
     } else {
       // B's entry masks C's, so skip C's entry.
@@ -1268,6 +1274,8 @@ copy_objtable_c_not_in_b(uint64_t  key,
     assert(ret == 0);
 
     DEBUG_ONLY(internal_used_bytes = (size_t)(cb_region_cursor(cl->dest_region) - c0b));
+
+    assert(external_used_bytes <= klox_Obj_external_size(cl->dest_cb, (Obj*)cb_at(cl->src_cb, cEntryOffset)));
   }
 
   DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
@@ -1294,7 +1302,6 @@ copy_objtable_c_not_in_b(uint64_t  key,
          external_size_adjustment));
 
   // Actual bytes used must be <= BST's self-considered growth.
-  assert(external_used_bytes <= klox_Obj_external_size(cl->dest_cb, (Obj*)cb_at(cl->src_cb, cEntryOffset)));
   assert(external_used_bytes <= new_b_external_size - cl->last_new_b_external_size);
   assert(internal_used_bytes <= new_b_internal_size - cl->last_new_b_internal_size);
   assert(total_used_bytes <= new_b_size - cl->last_new_b_size);
