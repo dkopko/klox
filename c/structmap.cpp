@@ -133,7 +133,14 @@ structmap_insert(struct cb        **cb,
       case STRUCTMAP_ENTRY_ITEM: {
         // Replace the value of the key, if the key is already present.
         if (entry->item.key == key) {
-          structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value) - (ssize_t)sm->sizeof_value(*cb, entry->item.value));
+          //NOTE: We don't do the following line because it's possible that the old value is below the read_cutoff.  This means that the
+          // old value may have already contributed to the external size, but will no longer (as it would no longer be read below the read_cutoff in the future).
+          // As all we want is an ceiling estimate anyways, we can just ignore the subtracted term.  An alternative would be to store the sizes in the entry so
+          // that we wouldn't have to dereference the value below the read_cutoff.  Also, note that this is peculiar to the ObjTable values (which are offsets), but
+          // is not appropriate for the class methods / instance fields usages of this structure.  However, as there are no key->value replacements for those usages,
+          // this hack works for now.
+          //structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value) - (ssize_t)sm->sizeof_value(*cb, entry->item.value));
+          structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value));
           entry->item.value = value;
           goto exit_loop;
         }

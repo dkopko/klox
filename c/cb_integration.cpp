@@ -431,8 +431,10 @@ objtable_freeze(ObjTable *obj_table)
 {
   //assert(num_entries(obj_table->c) == 0); //FIXME create this check
   obj_table->c = obj_table->b;
+  c_read_cutoff = b_read_cutoff;
+
   obj_table->b = obj_table->a;
-  objtablelayer_init(&(obj_table->a)); //FIXME this ought to be able to be removed!
+  b_read_cutoff = a_read_cutoff;
 }
 
 size_t
@@ -1037,6 +1039,8 @@ struct copy_objtable_closure
   struct cb        *dest_cb;
   struct cb_region *dest_region;
   ObjTableLayer    *new_b;
+  cb_offset_t       b_read_cutoff;
+  cb_offset_t       c_read_cutoff;
   DEBUG_ONLY(size_t last_new_b_external_size);
   DEBUG_ONLY(size_t last_new_b_internal_size);
   DEBUG_ONLY(size_t last_new_b_size);
@@ -1062,6 +1066,12 @@ copy_objtable_b(uint64_t  key,
   int ret;
 
   assert(!ALREADY_WHITE(offset));
+
+  //Skip those entries which are below the b_read_cutoff.
+  if (cb_offset_cmp(offset, cl->b_read_cutoff) == -1) {
+    KLOX_TRACE("skipping cutoff object #%ju.\n", (uintmax_t)obj_id.id);
+    return 0;
+  }
 
   //Skip those ObjIDs which have been invalidated.  (CB_NULL serves as a
   // tombstone in such cases).
@@ -1155,6 +1165,12 @@ copy_objtable_c_not_in_b(uint64_t  key,
 
   //Region C should never contain invalidated entries.
   assert(cEntryOffset != CB_NULL);
+
+  //Skip those entries which are below the c_read_cutoff.
+  if (cb_offset_cmp(cEntryOffset, cl->c_read_cutoff) == -1) {
+    KLOX_TRACE("skipping cutoff object #%ju.\n", (uintmax_t)key);
+    return 0;
+  }
 
   //Skip those ObjIDs which are not marked dark (and are therefore unreachable
   // from the roots of the VM state).
@@ -1490,16 +1506,27 @@ copy_globals_c_not_in_b(const struct cb_term *key_term,
   return 0;
 }
 
+struct gray_objtable_closure
+{
+  cb_offset_t  read_cutoff;
+  const char  *desc;
+};
+
 static int
 grayObjtableTraversal(uint64_t key, uint64_t value, void *closure)
 {
-  const char *desc = (const char *)closure;
+  struct gray_objtable_closure *goc = (struct gray_objtable_closure *)closure;
   ObjID objID = { .id = key };
+  cb_offset_t offset = (cb_offset_t)value;
 
-  (void)desc;
+  //Skip those entries which are below the read_cutoff.
+  if (cb_offset_cmp(offset, goc->read_cutoff) == -1) {
+    //KLOX_TRACE("skipping cutoff object #%ju.\n", (uintmax_t)obj_id.id);
+    return 0;
+  }
 
   KLOX_TRACE("%s graying #%ju\n",
-             desc,
+             goc->desc,
              (uintmax_t)objID.id);
 
   grayObject(objID);
@@ -1541,17 +1568,24 @@ gc_perform(struct gc_request_response *rr)
 
     (void) ret;
 
+    struct gray_objtable_closure goc;
+
+    goc.desc = "B";
+    goc.read_cutoff = b_read_cutoff;
     ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
                                  b_read_cutoff,
                                  &(rr->req.objtable_b),
                                  &grayObjtableTraversal,
-                                 (void*)"B");
+                                 &goc);
     assert(ret == 0);
+
+    goc.desc = "C";
+    goc.read_cutoff = c_read_cutoff;
     ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
                                  c_read_cutoff,
                                  &(rr->req.objtable_c),
                                  &grayObjtableTraversal,
-                                 (void*)"C");
+                                 &goc);
     assert(ret == 0);
   }
 
@@ -1637,6 +1671,8 @@ gc_perform(struct gc_request_response *rr)
     closure.dest_cb     = rr->req.orig_cb;
     closure.dest_region = &(rr->req.objtable_new_region);
     closure.new_b       = &(rr->resp.objtable_new_b);
+    closure.b_read_cutoff = b_read_cutoff;
+    closure.c_read_cutoff = c_read_cutoff;
     DEBUG_ONLY(closure.last_new_b_external_size = objtablelayer_external_size(&(rr->resp.objtable_new_b)));
     DEBUG_ONLY(closure.last_new_b_internal_size = objtablelayer_internal_size(&(rr->resp.objtable_new_b)));
     DEBUG_ONLY(closure.last_new_b_size = objtablelayer_size(&(rr->resp.objtable_new_b)));

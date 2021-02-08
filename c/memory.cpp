@@ -794,19 +794,32 @@ void freezeARegions(cb_offset_t new_lower_bound) {
   assert(vm.globals.root_a >= new_lower_bound);
 }
 
+
+struct print_objtable_closure
+{
+  cb_offset_t  read_cutoff;
+  const char  *desc;
+};
+
 static int
 printObjtableTraversal(uint64_t  key,
                        uint64_t  val,
                        void     *closure)
 {
-  const char *desc = (const char *)closure;
+  struct print_objtable_closure *poc = (struct print_objtable_closure *)closure;
   ObjID objID = { .id = key };
   cb_offset_t offset = (cb_offset_t)val;
 
-  (void)desc, (void)objID, (void)offset;
+  (void)poc, (void)objID, (void)offset;
+
+  //Skip those entries which are below the read_cutoff.
+  if (cb_offset_cmp(offset, poc->read_cutoff) == -1) {
+    //KLOX_TRACE("skipping cutoff object #%ju.\n", (uintmax_t)obj_id.id);
+    return 0;
+  }
 
   KLOX_TRACE("%s #%ju -> @%ju\n",
-             desc,
+             poc->desc,
              (uintmax_t)objID.id,
              (uintmax_t)offset);
 
@@ -828,24 +841,36 @@ void printStateOfWorld(const char *desc) {
              objtablelayer_size(&(thread_objtable.b)),
              thread_objtable.c.sm.root_node_offset,
              objtablelayer_size(&(thread_objtable.c)));
+
+  struct print_objtable_closure poc;
+
+  poc.read_cutoff = a_read_cutoff;
+  poc.desc = "A";
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
                                a_read_cutoff,
                                &(thread_objtable.a),
                                &printObjtableTraversal,
-                               (void*)"A");
+                               &poc);
   assert(ret == 0);
+
+  poc.read_cutoff = b_read_cutoff;
+  poc.desc = "B";
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
                                b_read_cutoff,
                                &(thread_objtable.b),
                                &printObjtableTraversal,
-                               (void*)"B");
+                               &poc);
   assert(ret == 0);
+
+  poc.read_cutoff = c_read_cutoff;
+  poc.desc = "C";
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
                                c_read_cutoff,
                                &(thread_objtable.c),
                                &printObjtableTraversal,
-                               (void*)"C");
+                               &poc);
   assert(ret == 0);
+
   KLOX_TRACE("----- end objtable -----\n");
 
   KLOX_TRACE("----- begin vm.strings -----\n");
