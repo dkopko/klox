@@ -105,7 +105,6 @@ structmap_insert(struct cb        **cb,
                  uint64_t           key,
                  uint64_t           value)
 {
-  //FIXME use read_cutoff/write_cutoff
   int ret;
 
   (void)ret;
@@ -166,6 +165,11 @@ structmap_insert(struct cb        **cb,
       /* fall through */
 
       case STRUCTMAP_ENTRY_NODE: {
+        //Pretend entries which are actually below the read_cutoff do not exist.
+        if (cb_offset_cmp(entry->node.offset, read_cutoff) == -1) {
+          entry->type = STRUCTMAP_ENTRY_EMPTY;
+          continue;
+        }
         structmap_select_modifiable_node(cb, region, write_cutoff, &(entry->node.offset));
         struct structmap_node *child_node = (struct structmap_node *)cb_at(*cb, entry->node.offset);
         unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
