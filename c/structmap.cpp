@@ -4,7 +4,7 @@
 
 
 void
-structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value)
+structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, structmap_is_value_read_cutoff_t is_value_read_cutoff)
 {
   sm->lowest_inserted_key = 0;
   sm->highest_inserted_key = 0;
@@ -12,6 +12,7 @@ structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value)
   sm->node_count = 0;
   sm->total_external_size = 0;
   sm->sizeof_value = sizeof_value;
+  sm->is_value_read_cutoff = is_value_read_cutoff;
 
   for (int i = 0; i < (1 << STRUCTMAP_FIRSTLEVEL_BITS); ++i) {
     sm->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
@@ -22,6 +23,7 @@ structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value)
 static int
 structmap_node_alloc(struct cb        **cb,
                      struct cb_region  *region,
+                     struct structmap  *sm,
                      cb_offset_t       *node_offset)
 {
     cb_offset_t new_node_offset;
@@ -36,12 +38,15 @@ structmap_node_alloc(struct cb        **cb,
     if (ret != CB_SUCCESS)
         return ret;
 
+    // Initialize.
     {
       struct structmap_node *sn = (struct structmap_node *)cb_at(*cb, new_node_offset);
       for (int i = 0; i < (1 << STRUCTMAP_LEVEL_BITS); ++i) {
         sn->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
       }
     }
+
+    ++(sm->node_count);
 
     *node_offset = new_node_offset;
 
@@ -76,6 +81,7 @@ ensure_structmap_modification_size(struct cb        **cb,
 static int
 structmap_select_modifiable_node(struct cb        **cb,
                                  struct cb_region  *region,
+                                 struct structmap  *sm,
                                  cb_offset_t        write_cutoff,
                                  cb_offset_t       *node_offset)
 {
@@ -88,7 +94,7 @@ structmap_select_modifiable_node(struct cb        **cb,
 
   struct structmap_node *old_node = (struct structmap_node *)cb_at(*cb, *node_offset);
 
-  ret = structmap_node_alloc(cb, region, node_offset);
+  ret = structmap_node_alloc(cb, region, sm, node_offset);
   assert(ret == 0);
 
   struct structmap_node *new_node = (struct structmap_node *)cb_at(*cb, *node_offset);
@@ -126,36 +132,33 @@ structmap_insert(struct cb        **cb,
         entry->type = STRUCTMAP_ENTRY_ITEM;
         entry->item.key = key;
         entry->item.value = value;
-        structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value));
+        entry->item.size = sm->sizeof_value(*cb, value);
+        structmap_external_size_adjust(sm, (ssize_t)entry->item.size);
         goto exit_loop;
 
       case STRUCTMAP_ENTRY_ITEM: {
         // Replace the value of the key, if the key is already present.
-        if (entry->item.key == key) {
-          //NOTE: We don't do the following line because it's possible that the old value is below the read_cutoff.  This means that the
-          // old value may have already contributed to the external size, but will no longer (as it would no longer be read below the read_cutoff in the future).
-          // As all we want is an ceiling estimate anyways, we can just ignore the subtracted term.  An alternative would be to store the sizes in the entry so
-          // that we wouldn't have to dereference the value below the read_cutoff.  Also, note that this is peculiar to the ObjTable values (which are offsets), but
-          // is not appropriate for the class methods / instance fields usages of this structure.  However, as there are no key->value replacements for those usages,
-          // this hack works for now.
-          //structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value) - (ssize_t)sm->sizeof_value(*cb, entry->item.value));
-          structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value));
+        if (entry->item.key == key || sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
+          size_t size = sm->sizeof_value(*cb, value);
+          structmap_external_size_adjust(sm, (ssize_t)size - (ssize_t)entry->item.size);
+          entry->item.key = key;
           entry->item.value = value;
+          entry->item.size = size;
           goto exit_loop;
         }
 
         // Otherwise, there is a collision in this slot at this level, create
         // a child node and add the old_key/old_value to it.
         cb_offset_t child_node_offset = CB_NULL; //FIXME shouldn't have to initialize
-        ret = structmap_node_alloc(cb, region, &child_node_offset);
+        ret = structmap_node_alloc(cb, region, sm, &child_node_offset);
         assert(ret == 0);
-        ++(sm->node_count);
         struct structmap_node *child_node = (struct structmap_node *)cb_at(*cb, child_node_offset);
         unsigned int child_route = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
         struct structmap_entry *child_entry = &(child_node->entries[child_route]);
         child_entry->type = STRUCTMAP_ENTRY_ITEM;
         child_entry->item.key = entry->item.key;
         child_entry->item.value = entry->item.value;
+        child_entry->item.size = entry->item.size;
 
         // Make the old location of the key/value now point to the nested child node.
         entry->type = STRUCTMAP_ENTRY_NODE;
@@ -170,7 +173,7 @@ structmap_insert(struct cb        **cb,
           entry->type = STRUCTMAP_ENTRY_EMPTY;
           continue;
         }
-        structmap_select_modifiable_node(cb, region, write_cutoff, &(entry->node.offset));
+        structmap_select_modifiable_node(cb, region, sm, write_cutoff, &(entry->node.offset));
         struct structmap_node *child_node = (struct structmap_node *)cb_at(*cb, entry->node.offset);
         unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
         entry = &(child_node->entries[child_route]);

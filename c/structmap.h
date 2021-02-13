@@ -13,7 +13,7 @@
 extern __thread void *thread_ring_start;
 extern __thread cb_mask_t thread_ring_mask;
 
-static const int STRUCTMAP_FIRSTLEVEL_BITS = 10;
+static const int STRUCTMAP_FIRSTLEVEL_BITS = 0;
 static const int STRUCTMAP_LEVEL_BITS = 5;
 
 // The maximum amount structmap_nodes we may need for a modification (insertion)
@@ -25,6 +25,7 @@ static const int STRUCTMAP_MODIFICATION_MAX_NODES = ((64 - STRUCTMAP_FIRSTLEVEL_
 //    for NULL-like sentinels.  FIXME is this still true after the revision toward the Bagwell-like implementation?
 
 typedef size_t (*structmap_value_size_t)(const struct cb *cb, uint64_t v);
+typedef bool (*structmap_is_value_read_cutoff_t)(cb_offset_t read_cutoff, uint64_t v);
 
 enum structmap_entry_type
 {
@@ -38,7 +39,7 @@ struct structmap_entry
   enum structmap_entry_type type;
   union
   {
-    struct { uint64_t key; uint64_t value; } item;
+    struct { uint64_t key; uint64_t value; size_t size; } item;
     struct { uint64_t offset; } node;
   };
 };
@@ -51,6 +52,7 @@ struct structmap
     unsigned int node_count;
     size_t       total_external_size;
     structmap_value_size_t sizeof_value;
+    structmap_is_value_read_cutoff_t is_value_read_cutoff;
 
     struct structmap_entry entries[1 << STRUCTMAP_FIRSTLEVEL_BITS];
 };
@@ -61,7 +63,7 @@ struct structmap_node
 };
 
 
-void structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value);
+void structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, structmap_is_value_read_cutoff_t is_value_read_cutoff);
 
 int
 structmap_insert(struct cb        **cb,
@@ -144,10 +146,24 @@ structmap_modification_size(void) //FIXME switch to constant?
   return STRUCTMAP_MODIFICATION_MAX_NODES * sizeof(struct structmap_node) + alignof(struct structmap_node) - 1;
 }
 
+extern inline void
+structmap_reset_external_size(struct structmap *sm)
+{
+  sm->total_external_size = 0;
+}
+
+extern inline void
+structmap_reset_internal_node_count(struct structmap *sm)
+{
+  sm->node_count = 0;
+}
+
 extern inline size_t
 structmap_internal_size(const struct structmap *sm)
 {
-  return sm->node_count * sizeof(struct structmap_node) + alignof(struct structmap_node) - 1;
+  //NOTE: Because the nodes may not be contiguous but rather interleaved with
+  // other, external structures, we have to account for as many alignments.
+  return sm->node_count * (sizeof(struct structmap_node) + alignof(struct structmap_node) - 1);
 }
 
 extern inline size_t

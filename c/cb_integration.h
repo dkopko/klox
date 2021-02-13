@@ -456,6 +456,12 @@ size_t
 klox_value_no_external_size(const struct cb      *cb,
                             const struct cb_term *term);
 
+bool
+objtable_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v);
+
+bool
+null_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v);
+
 void
 klox_on_cb_resize(struct cb *old_cb, struct cb *new_cb);
 

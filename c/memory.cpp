@@ -451,9 +451,11 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
       dest->obj         = src->obj;
       dest->name        = src->name;
       dest->superclass  = src->superclass;
-      //NOTE: We expect lookup of methods to first check this new, mutable,
-      //  A-region ObjClass, before looking at older versions in B and C.
-      methods_layer_init(cb, region, &(dest->methods_sm));
+      //NEW CODE, PROBABLY BROKEN
+      dest->methods_sm  = src->methods_sm;
+
+      assert(structmap_external_size(&(dest->methods_sm)) == 0);
+      //structmap_reset_internal_node_count(&(dest->methods_sm));
 
       break;
     }
@@ -519,9 +521,12 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
 
       dest->obj        = src->obj;
       dest->klass      = src->klass;
-      //NOTE: We expect lookup of fields to first check this new, mutable,
-      //  A-region ObjClass, before looking at older versions in B and C.
-      fields_layer_init(cb, region, &(dest->fields_sm));
+      //NEW CODE, PROBABLY BROKEN
+      dest->fields_sm  = src->fields_sm;
+
+      assert(structmap_external_size(&(dest->fields_sm)) == 0);
+      //structmap_reset_internal_node_count(&(dest->fields_sm));
+
       break;
     }
 
@@ -638,8 +643,8 @@ copy_entry_to_sm(uint64_t k, uint64_t v, void *closure)
                          cl->dest_sm,
                          k,
                          v);
-
   assert(ret == 0);
+
   DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
   DEBUG_ONLY(size_t      sm_size = structmap_size(cl->dest_sm));
 
@@ -812,7 +817,7 @@ printObjtableTraversal(uint64_t  key,
 
   //Skip those entries which are below the read_cutoff.
   if (cb_offset_cmp(offset, poc->read_cutoff) == -1) {
-    //KLOX_TRACE("skipping cutoff object #%ju.\n", (uintmax_t)obj_id.id);
+    //KLOX_TRACE("%s skipping cutoff object #%ju.\n", poc->desc, (uintmax_t)objID.id);
     return 0;
   }
 

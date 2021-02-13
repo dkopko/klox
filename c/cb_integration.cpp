@@ -135,6 +135,18 @@ klox_no_external_size2(const struct cb *cb,
   return 0;
 }
 
+bool
+objtable_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v)
+{
+  return cb_offset_cmp((cb_offset_t)v, read_cutoff) < 0;
+}
+
+bool
+null_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v)
+{
+  return false;
+}
+
 static size_t
 klox_Obj_external_size(const struct cb *cb,
                        Obj *obj)
@@ -266,7 +278,7 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 
 int
 objtablelayer_init(ObjTableLayer *layer) {
-  structmap_init(&(layer->sm), &klox_allocation_size);
+  structmap_init(&(layer->sm), &klox_allocation_size, &objtable_is_value_read_cutoff);
   return 0;
 }
 
@@ -328,13 +340,13 @@ objtablelayer_external_size_adjust(ObjTableLayer *layer,
 
 int
 methods_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm) {
-  structmap_init(sm, &klox_no_external_size2);
+  structmap_init(sm, &klox_no_external_size2, &null_is_value_read_cutoff);
   return 0;
 }
 
 int
 fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm) {
-  structmap_init(sm, &klox_no_external_size2);
+  structmap_init(sm, &klox_no_external_size2, &null_is_value_read_cutoff);
   return 0;
 }
 
@@ -436,16 +448,27 @@ objtable_freeze(ObjTable *obj_table)
 
   obj_table->b = obj_table->a;
   b_read_cutoff = a_read_cutoff;
+
+  //Although A will persistently represent the latest complete contents of B+C,
+  //we will reset the size and node count to zero so that these values will
+  //track only those new external sizes and additional nodes as caused by
+  //subsequent mutations in A.
+  structmap_reset_external_size(&(obj_table->a.sm));
+  structmap_reset_internal_node_count(&(obj_table->a.sm));
 }
 
 size_t
 objtable_consolidation_size(ObjTable *obj_table)
 {
-  size_t objtable_b_size = objtablelayer_size(&(obj_table->b));
-  size_t objtable_c_size = objtablelayer_size(&(obj_table->c));
-  KLOX_TRACE("objtable_b_size: %zu, objtable_c_size: %zu\n",
-         objtable_b_size, objtable_c_size);
-  return objtable_b_size + objtable_c_size + objtablelayer_modification_size();
+  size_t b_external_size = structmap_external_size(&(obj_table->b.sm));
+  size_t b_internal_size = structmap_internal_size(&(obj_table->b.sm));
+  size_t c_external_size = structmap_external_size(&(obj_table->c.sm));
+  size_t c_internal_size = structmap_internal_size(&(obj_table->c.sm));
+
+  KLOX_TRACE("objtable b_external size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu, modification_size: %zu\n",
+         b_external_size, b_internal_size, c_external_size, c_internal_size, structmap_modification_size());
+
+  return b_external_size + b_internal_size + c_external_size + c_internal_size + structmap_modification_size();
 }
 
 cb_offset_t
@@ -973,8 +996,8 @@ merge_c_class_methods(uint64_t  k,
 
   ret = structmap_insert(&(cl->dest_cb),
                          cl->dest_region,
-                         a_read_cutoff,
-                         a_write_cutoff,
+                         cb_region_start(cl->dest_region),
+                         cb_region_start(cl->dest_region),
                          cl->dest_methods_sm,
                          k,
                          v);
@@ -1018,8 +1041,8 @@ merge_c_instance_fields(uint64_t  k,
 
   ret = structmap_insert(&(cl->dest_cb),
                          cl->dest_region,
-                         a_read_cutoff,
-                         a_write_cutoff,
+                         cb_region_start(cl->dest_region),
+                         cb_region_start(cl->dest_region),
                          cl->dest_fields_sm,
                          k,
                          v);
@@ -1106,8 +1129,8 @@ copy_objtable_b(uint64_t  key,
 
   ret = objtablelayer_insert(&(cl->dest_cb),
                              cl->dest_region,
-                             a_read_cutoff,
-                             a_write_cutoff,
+                             cb_region_start(cl->dest_region),
+                             cb_region_start(cl->dest_region),
                              cl->new_b,
                              key,
                              (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
@@ -1130,8 +1153,9 @@ copy_objtable_b(uint64_t  key,
          (uintmax_t)clone_offset,
          (newly_white ? "NEWLYWHITE" : "")));
 
-  // Actual bytes used must be <= BST's self-considered growth.
+  // Actual bytes used must be <= the structmap's self-considered growth.
   assert(external_used_bytes <= klox_Obj_external_size(cl->dest_cb, (Obj*)cb_at(cl->src_cb, offset)));
+  assert(external_used_bytes <= klox_Obj_external_size(cl->dest_cb, (Obj*)cb_at(cl->src_cb, clone_offset)));
   assert(external_used_bytes <= new_b_external_size - cl->last_new_b_external_size);
   assert(internal_used_bytes <= new_b_internal_size - cl->last_new_b_internal_size);
   assert(total_used_bytes <= new_b_size - cl->last_new_b_size);
@@ -1283,8 +1307,8 @@ copy_objtable_c_not_in_b(uint64_t  key,
 
     ret = objtablelayer_insert(&(cl->dest_cb),
                                cl->dest_region,
-                               a_read_cutoff,
-                               a_write_cutoff,
+                               cb_region_start(cl->dest_region),
+                               cb_region_start(cl->dest_region),
                                cl->new_b,
                                key,
                                (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
