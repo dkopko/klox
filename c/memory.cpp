@@ -451,11 +451,10 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
       dest->obj         = src->obj;
       dest->name        = src->name;
       dest->superclass  = src->superclass;
-      //NEW CODE, PROBABLY BROKEN
       dest->methods_sm  = src->methods_sm;
 
       assert(structmap_external_size(&(dest->methods_sm)) == 0);
-      //structmap_reset_internal_node_count(&(dest->methods_sm));
+      structmap_set_layer_mark(&(dest->methods_sm));
 
       break;
     }
@@ -521,11 +520,10 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
 
       dest->obj        = src->obj;
       dest->klass      = src->klass;
-      //NEW CODE, PROBABLY BROKEN
       dest->fields_sm  = src->fields_sm;
 
       assert(structmap_external_size(&(dest->fields_sm)) == 0);
-      //structmap_reset_internal_node_count(&(dest->fields_sm));
+      structmap_set_layer_mark(&(dest->fields_sm));
 
       break;
     }

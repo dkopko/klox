@@ -11,6 +11,8 @@ structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, struct
   sm->root_node_offset = CB_NULL;
   sm->node_count = 0;
   sm->total_external_size = 0;
+  sm->layer_mark_node_count = 0;
+  sm->layer_mark_external_size = 0;
   sm->sizeof_value = sizeof_value;
   sm->is_value_read_cutoff = is_value_read_cutoff;
 
@@ -138,9 +140,11 @@ structmap_insert(struct cb        **cb,
 
       case STRUCTMAP_ENTRY_ITEM: {
         // Replace the value of the key, if the key is already present.
-        if (entry->item.key == key || sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
+        bool is_cutoff;
+        if (entry->item.key == key || (is_cutoff = sm->is_value_read_cutoff(read_cutoff, entry->item.value))) {
           size_t size = sm->sizeof_value(*cb, value);
-          structmap_external_size_adjust(sm, (ssize_t)size - (ssize_t)entry->item.size);
+          ssize_t delta_size = (ssize_t)size - (is_cutoff ? 0 : (ssize_t)entry->item.size);
+          structmap_external_size_adjust(sm, delta_size);
           entry->item.key = key;
           entry->item.value = value;
           entry->item.size = size;

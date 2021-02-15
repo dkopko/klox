@@ -51,6 +51,8 @@ struct structmap
     cb_offset_t  root_node_offset; //FIXME remove, no longer used
     unsigned int node_count;
     size_t       total_external_size;
+    unsigned int layer_mark_node_count;
+    size_t       layer_mark_external_size;
     structmap_value_size_t sizeof_value;
     structmap_is_value_read_cutoff_t is_value_read_cutoff;
 
@@ -147,15 +149,10 @@ structmap_modification_size(void) //FIXME switch to constant?
 }
 
 extern inline void
-structmap_reset_external_size(struct structmap *sm)
+structmap_set_layer_mark(struct structmap *sm)
 {
-  sm->total_external_size = 0;
-}
-
-extern inline void
-structmap_reset_internal_node_count(struct structmap *sm)
-{
-  sm->node_count = 0;
+  sm->layer_mark_external_size = sm->total_external_size;
+  sm->layer_mark_node_count = sm->node_count;
 }
 
 extern inline size_t
@@ -170,6 +167,25 @@ extern inline size_t
 structmap_external_size(const struct structmap *sm)
 {
   return sm->total_external_size;
+}
+
+//NOTE: This returns an ssize_t in case the marked layer has incorporated a
+// reduction of internal nodes. (as of 2020-02-12 reduction of internal nodes is not yet possible)
+extern inline ssize_t
+structmap_layer_internal_size(const struct structmap *sm)
+{
+  //NOTE: Because the nodes may not be contiguous but rather interleaved with
+  // other, external structures, we have to account for as many alignments.
+  return ((int)sm->node_count - (int)sm->layer_mark_node_count) * (sizeof(struct structmap_node) + alignof(struct structmap_node) - 1);
+}
+
+//NOTE: This returns an ssize_t in case the marked layer has incorporated a
+// reduction of external sizes (e.g. via replacement of a key's value with a
+// value bearing a smaller external size).
+extern inline ssize_t
+structmap_layer_external_size(const struct structmap *sm)
+{
+  return (ssize_t)sm->total_external_size - (ssize_t)sm->layer_mark_external_size;
 }
 
 extern inline void

@@ -450,25 +450,41 @@ objtable_freeze(ObjTable *obj_table)
   b_read_cutoff = a_read_cutoff;
 
   //Although A will persistently represent the latest complete contents of B+C,
-  //we will reset the size and node count to zero so that these values will
-  //track only those new external sizes and additional nodes as caused by
-  //subsequent mutations in A.
-  structmap_reset_external_size(&(obj_table->a.sm));
-  structmap_reset_internal_node_count(&(obj_table->a.sm));
+  //we will set the layer mark so that we can track only those new external
+  //sizes and additional nodes as caused by subsequent mutations in A.
+  structmap_set_layer_mark(&(obj_table->a.sm));
 }
 
 size_t
 objtable_consolidation_size(ObjTable *obj_table)
 {
-  size_t b_external_size = structmap_external_size(&(obj_table->b.sm));
-  size_t b_internal_size = structmap_internal_size(&(obj_table->b.sm));
-  size_t c_external_size = structmap_external_size(&(obj_table->c.sm));
-  size_t c_internal_size = structmap_internal_size(&(obj_table->c.sm));
+  size_t b_external_size        = structmap_external_size(&(obj_table->b.sm));
+  size_t b_internal_size        = structmap_internal_size(&(obj_table->b.sm));
+  size_t c_external_size        = structmap_external_size(&(obj_table->c.sm));
+  size_t c_internal_size        = structmap_internal_size(&(obj_table->c.sm));
+  ssize_t b_layer_external_size = structmap_layer_external_size(&(obj_table->b.sm));
+  ssize_t b_layer_internal_size = structmap_layer_internal_size(&(obj_table->b.sm));
+  ssize_t c_layer_external_size = structmap_layer_external_size(&(obj_table->c.sm));
+  ssize_t c_layer_internal_size = structmap_layer_internal_size(&(obj_table->c.sm));
 
-  KLOX_TRACE("objtable b_external size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu, modification_size: %zu\n",
+  (void)b_external_size, (void)b_internal_size, (void)c_external_size, (void)c_internal_size;
+  (void)b_layer_external_size, (void)b_layer_internal_size, (void)c_layer_external_size, (void)c_layer_internal_size;
+
+  //printf("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu, modification_size: %zu\n",
+  //       b_external_size, b_internal_size, c_external_size, c_internal_size, structmap_modification_size());
+  //printf("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu\n",
+  //       b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, structmap_modification_size());
+  KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu, modification_size: %zu\n",
          b_external_size, b_internal_size, c_external_size, c_internal_size, structmap_modification_size());
+  KLOX_TRACE("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu\n",
+         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, structmap_modification_size());
 
-  return b_external_size + b_internal_size + c_external_size + c_internal_size + structmap_modification_size();
+  assert(b_layer_external_size <= (ssize_t)b_external_size);
+  assert(b_layer_internal_size <= (ssize_t)b_internal_size);
+  assert(c_layer_external_size == (ssize_t)c_external_size);
+  assert(c_layer_internal_size == (ssize_t)c_internal_size);
+
+  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + structmap_modification_size();
 }
 
 cb_offset_t
