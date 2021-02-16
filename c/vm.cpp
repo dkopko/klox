@@ -457,7 +457,10 @@ static bool instanceFieldGet(OID<ObjInstance> instance, Value key, Value *value)
 static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) {
   assert(IS_OBJ(key));
 
-  RCBP<ObjInstance> instanceA = instance.mlip(); //FIXME this is safe over resizes, but is it safe over potential GCs caused by allocations below??
+  //FIXME These RCBP's are safe over resizes, but are they safe over potential GCs caused by allocations below?
+  RCBP<ObjInstance> instanceA = instance.mlip();
+  RCBP<ObjInstance> instanceB = instance.clipB();
+  RCBP<ObjInstance> instanceC = instance.clipC();
   uint64_t k = AS_OBJ_ID(key).id;
   uint64_t v = value.val;  //BIG FIXME - structmap won't handle double encodings of 0x0 and 0x1.
   int ret;
@@ -472,6 +475,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
                                                   structmap_modification_size()));
 
   size_t size_before = structmap_size(&(instanceA.cp()->fields_sm));
+  unsigned int nodes_before = structmap_node_count(&(instanceA.cp()->fields_sm));
 
   struct structmap fields_sm = instanceA.mp()->fields_sm;
 
@@ -487,6 +491,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   instanceA.mp()->fields_sm = fields_sm;
 
   size_t size_after = structmap_size(&(instanceA.cp()->fields_sm));
+  unsigned int nodes_after = structmap_node_count(&(instanceA.cp()->fields_sm));
 
   //NOTE: Because this field addition is done to an ObjInstance already present
   // in the objtable, we must manually inform the objtable of this independent
@@ -497,6 +502,19 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
                                                   - (ssize_t)structmap_modification_size()));
 
+  //Account for future structmap enlargement on merge due to slot collisions.
+  assert(nodes_after >= nodes_before);
+  unsigned int delta_node_count = nodes_after - nodes_before;
+  unsigned int b_collide_node_count = (instanceB.is_nil() ? 0 :
+    structmap_would_collide_node_count(thread_cb, b_read_cutoff, &(instanceB.cp()->fields_sm), k));
+  unsigned int c_collide_node_count = (instanceC.is_nil() ? 0 :
+    structmap_would_collide_node_count(thread_cb, c_read_cutoff, &(instanceC.cp()->fields_sm), k));
+  unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count : c_collide_node_count);
+  if (max_collide_node_count > delta_node_count) {
+    unsigned int addl_node_count = max_collide_node_count - delta_node_count;
+    KLOX_TRACE("Need addl_nodes (instance): %ju\n", (uintmax_t)addl_node_count);
+    structmap_addl_nodes_adjust(&(instanceA.mp()->fields_sm), addl_node_count);
+  }
 }
 
 static bool classMethodGet(OID<ObjClass> klass, Value key, Value *value) {
@@ -519,7 +537,10 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   assert(IS_OBJ(key));
   assert(IS_OBJ(value));
 
-  RCBP<ObjClass> classA = klass.mlip(); //FIXME this is safe over resizes, but is it safe over potential GCs caused by allocations below??
+  //FIXME These RCBP's are safe over resizes, but are they safe over potential GCs caused by allocations below?
+  RCBP<ObjClass> classA = klass.mlip();
+  RCBP<ObjClass> classB = klass.clipB();
+  RCBP<ObjClass> classC = klass.clipC();
   uint64_t k = AS_OBJ_ID(key).id;
   uint64_t v = value.val;  //BIG FIXME - structmap won't handle double encodings of 0x0 and 0x1.
   int ret;
@@ -534,6 +555,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
                                                   structmap_modification_size()));
 
   size_t size_before = structmap_size(&(classA.cp()->methods_sm));
+  size_t nodes_before = structmap_node_count(&(classA.cp()->methods_sm));
 
   struct structmap methods_sm = classA.mp()->methods_sm;
 
@@ -549,6 +571,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   classA.mp()->methods_sm = methods_sm;
 
   size_t size_after = structmap_size(&(classA.cp()->methods_sm));
+  size_t nodes_after = structmap_node_count(&(classA.cp()->methods_sm));
 
   //NOTE: Because this method addition is done to an ObjClass already present
   // in the objtable, we must manually inform the objtable of this independent
@@ -558,6 +581,20 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
                                                   - (ssize_t)structmap_modification_size()));
+
+  //Account for future structmap enlargement on merge due to slot collisions.
+  assert(nodes_after >= nodes_before);
+  unsigned int delta_node_count = nodes_after - nodes_before;
+  unsigned int b_collide_node_count = (classB.is_nil() ? 0 :
+    structmap_would_collide_node_count(thread_cb, b_read_cutoff, &(classB.cp()->methods_sm), k));
+  unsigned int c_collide_node_count = (classC.is_nil() ? 0 :
+    structmap_would_collide_node_count(thread_cb, c_read_cutoff, &(classC.cp()->methods_sm), k));
+  unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count : c_collide_node_count);
+  if (max_collide_node_count > delta_node_count) {
+    unsigned int addl_node_count = max_collide_node_count - delta_node_count;
+    KLOX_TRACE("Need addl_nodes (class): %ju\n", (uintmax_t)addl_node_count);
+    structmap_addl_nodes_adjust(&(classA.mp()->methods_sm), addl_node_count);
+  }
 }
 
 static int

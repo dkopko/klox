@@ -13,6 +13,7 @@ structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, struct
   sm->total_external_size = 0;
   sm->layer_mark_node_count = 0;
   sm->layer_mark_external_size = 0;
+  sm->node_count_addl = 0;
   sm->sizeof_value = sizeof_value;
   sm->is_value_read_cutoff = is_value_read_cutoff;
 
@@ -139,7 +140,9 @@ structmap_insert(struct cb        **cb,
         goto exit_loop;
 
       case STRUCTMAP_ENTRY_ITEM: {
-        // Replace the value of the key, if the key is already present.
+        // Replace the value of the key, if the key is already present, or if
+        // the mapping is considered below the read cutoff (having a value which
+        // fulfills the 'is_value_read_cutoff' predicate.
         bool is_cutoff;
         if (entry->item.key == key || (is_cutoff = sm->is_value_read_cutoff(read_cutoff, entry->item.value))) {
           size_t size = sm->sizeof_value(*cb, value);
@@ -212,6 +215,81 @@ exit_loop:
 #endif
 
   return 0;
+}
+
+unsigned int
+structmap_would_collide_node_count(const struct cb        *cb,
+                                   cb_offset_t             read_cutoff,
+                                   const struct structmap *sm,
+                                   uint64_t                key)
+{
+  //NOTE: The purpose of this function is to determine how many nodes would need
+  // to additionally be created for the target structmap 'sm' if key 'key' were
+  // to be inserted.  It is used when mutating the A layer to check for the
+  // additional size needing to be allocated for future consolidation merge of
+  // the A layer keys down with the keys of the B and C layers.
+  // For this to work, all of the A, B, and C layers must use the same slot
+  // layouts (once this becomes dynamic in the future).
+
+  assert(key > 0);
+
+  const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+  unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
+
+  while (true) {
+    switch (entry->type) {
+      case STRUCTMAP_ENTRY_EMPTY:
+        // We have (possibly traversed and) reached an empty slot.  There would
+        // be no need to create any new nodes to resolve slot collisions if this
+        // key were added to this structmap.
+        return 0;
+
+      case STRUCTMAP_ENTRY_ITEM: {
+        if (entry->item.key == key || sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
+          // The key is already present, or the mapping is considered below the
+          // read_cutoff (having a value which fulfills the 'is_value_read_cutoff'
+          // predicate.  This is equivalent to a STRUCTMAP_ENTRY_EMPTY empty slot.
+          return 0;
+        }
+
+        // Otherwise, there is a collision in this slot at this level.  Figure
+        // out how many nodes would need to be created to reach the point of
+        // slot independence for the existing key and the key being evaluated.
+        unsigned int addl_nodes = 1;
+        unsigned int existing_key_child_slot = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+        unsigned int key_child_slot = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+
+        while (key_child_slot == existing_key_child_slot) {
+          key_route_base += STRUCTMAP_LEVEL_BITS;
+          ++addl_nodes;
+          existing_key_child_slot = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+          key_child_slot = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+        }
+
+        return addl_nodes;
+      }
+
+      case STRUCTMAP_ENTRY_NODE: {
+        //Pretend entries which are actually below the read_cutoff do not exist.
+        if (cb_offset_cmp(entry->node.offset, read_cutoff) == -1) {
+          // This is equivalent to a STRUCTMAP_ENTRY_EMPTY empty slot.
+          return 0;
+        }
+        struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
+        unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+        entry = &(child_node->entries[child_route]);
+        key_route_base += STRUCTMAP_LEVEL_BITS;
+      }
+      break;
+
+#ifndef NDEBUG
+      default:
+        printf("Bogus structmap entry type: %d\n", entry->type);
+        assert(false);
+        return 0;
+#endif
+    }
+  }
 }
 
 int
