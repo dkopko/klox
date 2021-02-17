@@ -37,6 +37,8 @@ __thread cb_offset_t       a_read_cutoff;
 __thread cb_offset_t       a_write_cutoff;
 __thread cb_offset_t       b_read_cutoff;
 __thread cb_offset_t       c_read_cutoff;
+__thread unsigned int      addl_collision_nodes;
+__thread unsigned int      snap_addl_collision_nodes;
 
 static __thread struct rcbp      *thread_rcbp_list        = NULL;
 
@@ -386,7 +388,7 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
   if (max_collide_node_count > delta_node_count) {
     unsigned int addl_node_count = max_collide_node_count - delta_node_count;
     KLOX_TRACE("Need addl_nodes (objtable): %ju\n", (uintmax_t)addl_node_count);
-    structmap_addl_nodes_adjust(&(obj_table->a.sm), addl_node_count);
+    addl_collision_nodes += addl_node_count;
   }
 }
 
@@ -474,6 +476,10 @@ objtable_freeze(ObjTable *obj_table)
   //we will set the layer mark so that we can track only those new external
   //sizes and additional nodes as caused by subsequent mutations in A.
   structmap_set_layer_mark(&(obj_table->a.sm));
+
+  //Track only new additional collision nodes.
+  snap_addl_collision_nodes = addl_collision_nodes;
+  addl_collision_nodes = 0;
 }
 
 size_t
@@ -487,25 +493,23 @@ objtable_consolidation_size(ObjTable *obj_table)
   ssize_t b_layer_internal_size = structmap_layer_internal_size(&(obj_table->b.sm));
   ssize_t c_layer_external_size = structmap_layer_external_size(&(obj_table->c.sm));
   ssize_t c_layer_internal_size = structmap_layer_internal_size(&(obj_table->c.sm));
+  size_t addl_size = snap_addl_collision_nodes * (sizeof(struct structmap_node) + alignof(struct structmap_node) - 1);
 
   (void)b_external_size, (void)b_internal_size, (void)c_external_size, (void)c_internal_size;
   (void)b_layer_external_size, (void)b_layer_internal_size, (void)c_layer_external_size, (void)c_layer_internal_size;
+  (void)addl_size;
 
-  //printf("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu, modification_size: %zu\n",
-  //       b_external_size, b_internal_size, c_external_size, c_internal_size, structmap_modification_size());
-  //printf("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu\n",
-  //       b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, structmap_modification_size());
-  KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu, modification_size: %zu\n",
-         b_external_size, b_internal_size, c_external_size, c_internal_size, structmap_modification_size());
-  KLOX_TRACE("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu\n",
-         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, structmap_modification_size());
+  KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu\n",
+         b_external_size, b_internal_size, c_external_size, c_internal_size);
+  KLOX_TRACE("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu, addl_size: %zu\n",
+         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, structmap_modification_size(), addl_size);
 
   assert(b_layer_external_size <= (ssize_t)b_external_size);
   assert(b_layer_internal_size <= (ssize_t)b_internal_size);
   assert(c_layer_external_size == (ssize_t)c_external_size);
   assert(c_layer_internal_size == (ssize_t)c_internal_size);
 
-  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + structmap_modification_size();
+  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + structmap_modification_size() + addl_size;
 }
 
 cb_offset_t

@@ -513,7 +513,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   if (max_collide_node_count > delta_node_count) {
     unsigned int addl_node_count = max_collide_node_count - delta_node_count;
     KLOX_TRACE("Need addl_nodes (instance): %ju\n", (uintmax_t)addl_node_count);
-    structmap_addl_nodes_adjust(&(instanceA.mp()->fields_sm), addl_node_count);
+    addl_collision_nodes += addl_node_count;
   }
 }
 
@@ -593,7 +593,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   if (max_collide_node_count > delta_node_count) {
     unsigned int addl_node_count = max_collide_node_count - delta_node_count;
     KLOX_TRACE("Need addl_nodes (class): %ju\n", (uintmax_t)addl_node_count);
-    structmap_addl_nodes_adjust(&(classA.mp()->methods_sm), addl_node_count);
+    addl_collision_nodes += addl_node_count;
   }
 }
 

@@ -13,7 +13,6 @@ structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, struct
   sm->total_external_size = 0;
   sm->layer_mark_node_count = 0;
   sm->layer_mark_external_size = 0;
-  sm->node_count_addl = 0;
   sm->sizeof_value = sizeof_value;
   sm->is_value_read_cutoff = is_value_read_cutoff;
 

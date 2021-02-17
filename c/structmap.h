@@ -53,7 +53,6 @@ struct structmap
     size_t       total_external_size;
     unsigned int layer_mark_node_count;
     size_t       layer_mark_external_size;
-    unsigned int node_count_addl;
     structmap_value_size_t sizeof_value;
     structmap_is_value_read_cutoff_t is_value_read_cutoff;
 
@@ -171,14 +170,6 @@ structmap_internal_size(const struct structmap *sm)
 }
 
 extern inline size_t
-structmap_internal_size_addl(const struct structmap *sm)
-{
-  //NOTE: Because the nodes may not be contiguous but rather interleaved with
-  // other, external structures, we have to account for as many alignments.
-  return sm->node_count_addl * (sizeof(struct structmap_node) + alignof(struct structmap_node) - 1);
-}
-
-extern inline size_t
 structmap_external_size(const struct structmap *sm)
 {
   return sm->total_external_size;
@@ -195,7 +186,6 @@ structmap_node_count(const struct structmap *sm)
 extern inline ssize_t
 structmap_layer_internal_size(const struct structmap *sm)
 {
-  //NOTE: node_count_addl is always included, without regards to layering.
   return ((int)sm->node_count - (int)sm->layer_mark_node_count) * (ssize_t)(sizeof(struct structmap_node) + alignof(struct structmap_node) - 1);
 }
 
@@ -214,14 +204,6 @@ structmap_external_size_adjust(struct structmap *sm,
 {
   assert(adjustment >= 0 || -adjustment < (ssize_t)sm->total_external_size);
   sm->total_external_size = (size_t)((ssize_t)sm->total_external_size + adjustment);
-}
-
-extern inline void
-structmap_addl_nodes_adjust(struct structmap *sm,
-                            int               adjustment)
-{
-  assert(adjustment >= 0 || -adjustment < (int)sm->node_count_addl);
-  sm->node_count_addl = (unsigned int)((int)sm->node_count_addl + adjustment);
 }
 
 extern inline size_t

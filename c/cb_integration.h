@@ -27,6 +27,8 @@ extern __thread cb_offset_t       a_read_cutoff;
 extern __thread cb_offset_t       a_write_cutoff;
 extern __thread cb_offset_t       b_read_cutoff;
 extern __thread cb_offset_t       c_read_cutoff;
+extern __thread unsigned int      addl_collision_nodes;
+extern __thread unsigned int      snap_addl_collision_nodes;
 
 // GC thread state.
 //FIXME make these to gc-thread-local.
