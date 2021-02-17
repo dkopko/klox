@@ -172,7 +172,7 @@ klox_Obj_external_size(const struct cb *cb,
     case OBJ_CLASS: {
       ObjClass *clazz = (ObjClass *)obj;
       return sizeof(ObjClass) + cb_alignof(ObjClass) - 1
-        + structmap_internal_size(&(clazz->methods_sm))
+        + structmap_size(&(clazz->methods_sm))
         + alloc_header_size + alloc_header_align - 1;
     }
 
@@ -195,7 +195,7 @@ klox_Obj_external_size(const struct cb *cb,
     case OBJ_INSTANCE: {
       ObjInstance *instance = (ObjInstance *)obj;
       return sizeof(ObjInstance) + cb_alignof(ObjInstance) - 1
-             + structmap_internal_size(&(instance->fields_sm))
+             + structmap_size(&(instance->fields_sm))
              + alloc_header_size + alloc_header_align - 1;
     }
 
@@ -325,12 +325,6 @@ objtablelayer_internal_size(ObjTableLayer *layer) {
 size_t
 objtablelayer_size(ObjTableLayer *layer) {
   return structmap_size(&(layer->sm));
-}
-
-size_t
-objtablelayer_modification_size(void)
-{
-  return structmap_modification_size();
 }
 
 void
@@ -502,14 +496,14 @@ objtable_consolidation_size(ObjTable *obj_table)
   KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu\n",
          b_external_size, b_internal_size, c_external_size, c_internal_size);
   KLOX_TRACE("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu, addl_size: %zu\n",
-         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, structmap_modification_size(), addl_size);
+         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, STRUCTMAP_MODIFICATION_SIZE, addl_size);
 
   assert(b_layer_external_size <= (ssize_t)b_external_size);
   assert(b_layer_internal_size <= (ssize_t)b_internal_size);
   assert(c_layer_external_size == (ssize_t)c_external_size);
   assert(c_layer_internal_size == (ssize_t)c_internal_size);
 
-  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + structmap_modification_size() + addl_size;
+  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + STRUCTMAP_MODIFICATION_SIZE + addl_size;
 }
 
 cb_offset_t

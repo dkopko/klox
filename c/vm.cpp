@@ -472,7 +472,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  structmap_modification_size()));
+                                                  STRUCTMAP_MODIFICATION_SIZE));
 
   size_t size_before = structmap_size(&(instanceA.cp()->fields_sm));
   unsigned int nodes_before = structmap_node_count(&(instanceA.cp()->fields_sm));
@@ -500,7 +500,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
                                   (ssize_t)size_after - (ssize_t)size_before);
 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  - (ssize_t)structmap_modification_size()));
+                                                  - (ssize_t)STRUCTMAP_MODIFICATION_SIZE));
 
   //Account for future structmap enlargement on merge due to slot collisions.
   assert(nodes_after >= nodes_before);
@@ -552,7 +552,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  structmap_modification_size()));
+                                                  STRUCTMAP_MODIFICATION_SIZE));
 
   size_t size_before = structmap_size(&(classA.cp()->methods_sm));
   size_t nodes_before = structmap_node_count(&(classA.cp()->methods_sm));
@@ -580,7 +580,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
                                   size_after - size_before);
 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  - (ssize_t)structmap_modification_size()));
+                                                  - (ssize_t)STRUCTMAP_MODIFICATION_SIZE));
 
   //Account for future structmap enlargement on merge due to slot collisions.
   assert(nodes_after >= nodes_before);
@@ -610,7 +610,7 @@ structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  structmap_modification_size()));
+                                                  STRUCTMAP_MODIFICATION_SIZE));
 
   size_t size_before = structmap_size(dest_sm);
 
@@ -628,7 +628,7 @@ structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
                                   (ssize_t)size_after - (ssize_t)size_before);
 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  - (ssize_t)structmap_modification_size()));
+                                                  - (ssize_t)STRUCTMAP_MODIFICATION_SIZE));
   return 0;
 }
 

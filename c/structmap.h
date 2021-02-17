@@ -16,10 +16,6 @@ extern __thread cb_mask_t thread_ring_mask;
 static const int STRUCTMAP_FIRSTLEVEL_BITS = 0;
 static const int STRUCTMAP_LEVEL_BITS = 5;
 
-// The maximum amount structmap_nodes we may need for a modification (insertion)
-// so that no CB resizes will happen.  This is ceil((64 - STRUCTMAP_FIRSTLEVEL_BITS) / STRUCTMAP_LEVEL_BITS).
-static const int STRUCTMAP_MODIFICATION_MAX_NODES = ((64 - STRUCTMAP_FIRSTLEVEL_BITS) / STRUCTMAP_LEVEL_BITS) + (int)!!((64 - STRUCTMAP_FIRSTLEVEL_BITS) % STRUCTMAP_LEVEL_BITS);
-
 //NOTES:
 // 1) Neither keys nor values are allowed to be 0, as this value is reserved
 //    for NULL-like sentinels.  FIXME is this still true after the revision toward the Bagwell-like implementation?
@@ -63,6 +59,12 @@ struct structmap_node
 {
     struct structmap_entry entries[1 << STRUCTMAP_LEVEL_BITS];
 };
+
+
+// The maximum amount structmap_nodes we may need for a modification (insertion)
+// so that no CB resizes will happen.  This is ceil((64 - STRUCTMAP_FIRSTLEVEL_BITS) / STRUCTMAP_LEVEL_BITS).
+static const int STRUCTMAP_MODIFICATION_MAX_NODES = ((64 - STRUCTMAP_FIRSTLEVEL_BITS) / STRUCTMAP_LEVEL_BITS) + (int)!!((64 - STRUCTMAP_FIRSTLEVEL_BITS) % STRUCTMAP_LEVEL_BITS);
+static const size_t STRUCTMAP_MODIFICATION_SIZE = (STRUCTMAP_MODIFICATION_MAX_NODES * sizeof(struct structmap_node)) + alignof(struct structmap_node) - 1;  //Contiguous, so no need to include alignment.
 
 
 void structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, structmap_is_value_read_cutoff_t is_value_read_cutoff);
@@ -145,15 +147,6 @@ structmap_traverse(const struct cb           **cb,
                    structmap_traverse_func_t   func,
                    void                       *closure);
 
-extern inline size_t
-structmap_modification_size(void) //FIXME switch to constant?
-{
-  // The maximum amount of space for the maximum amount of nodes we may need for
-  // a modification, plus alignment.
-
-  return STRUCTMAP_MODIFICATION_MAX_NODES * sizeof(struct structmap_node) + alignof(struct structmap_node) - 1;
-}
-
 extern inline void
 structmap_set_layer_mark(struct structmap *sm)
 {
@@ -209,7 +202,7 @@ structmap_external_size_adjust(struct structmap *sm,
 extern inline size_t
 structmap_size(const struct structmap *sm)
 {
-  return structmap_internal_size(sm) + structmap_external_size(sm) + structmap_modification_size();
+  return structmap_internal_size(sm) + structmap_external_size(sm);
 }
 
 #endif  //klox_structmap_h
