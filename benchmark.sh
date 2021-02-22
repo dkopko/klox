@@ -25,5 +25,6 @@ do
   rm -rf map-* gc-*
   echo "${b}"
   time "${BIN}" "${b}"
+  ls -lh map-* gc-*
 done
 
