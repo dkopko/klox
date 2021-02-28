@@ -215,6 +215,20 @@ triframes_ensureCurrentFrameIsMutable(TriFrames *tf) {
   //NOTE: We must also ensure that the slots member of currentFrame
   // points to a contiguous array in the mutable A region.
 fixup_slots:
+
+  //Rederive cached pointers of the returned-to frame.
+  //FIXME this is too expensive on every OP_RETURN, just do it if collection epoch of frame != present collection epoch
+  unsigned int ip_offset = 0;
+  if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
+    ip_offset = vm.currentFrame->ip - vm.currentFrame->ip_root;
+  }
+  vm.currentFrame->functionP = vm.currentFrame->closure.clip().cp()->function.clip().cp();
+  vm.currentFrame->constantsValuesP = vm.currentFrame->functionP->chunk.constants.values.clp().cp();
+  vm.currentFrame->ip_root = vm.currentFrame->functionP->chunk.code.clp().cp();
+  if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
+    vm.currentFrame->ip = vm.currentFrame->ip_root + ip_offset;
+  }
+
   if (vm.currentFrame->slotsIndex < vm.tristack.abi) {
     Value *mutableRange = tristack_at(&(vm.tristack), vm.tristack.abi);
     for (int i = vm.tristack.stackDepth, e = vm.currentFrame->slotsIndex; i > e; i--) {
@@ -331,7 +345,7 @@ static void runtimeError(const char* format, ...) {
     if (frame->has_ip_offset) {
         instruction = frame->ip_offset - 1;
     } else {
-        instruction = frame->ip - function.clip().cp()->chunk.code.clp().cp() - 1;
+        instruction = frame->ip - frame->ip_root - 1;
     }
     fprintf(stderr, "[line %d] in ",
             function.clip().cp()->chunk.lines.clp().cp()[instruction]);
@@ -875,9 +889,11 @@ static InterpretResult run() {
 
     assert(vm.currentFrame == triframes_currentFrame(&(vm.triframes)));
     assert(!vm.currentFrame->has_ip_offset);
+    assert(vm.currentFrame->ip_root == vm.currentFrame->closure.clip().cp()->function.clip().cp()->chunk.code.clp().cp());
+    assert((char*)vm.currentFrame->ip >= (char*)vm.currentFrame->ip_root);
 
     KLOX_TRACE("DANDEBUG instcount %ju %ju\n", (uintmax_t)instruction_count, (uintmax_t)*(vm.currentFrame->ip));
-    KLOX_TRACE("DANDEBUG instoffset %jd\n", (intmax_t)(vm.currentFrame->ip - vm.currentFrame->closure.clip().cp()->function.clip().cp()->chunk.code.clp().cp()));
+    KLOX_TRACE("DANDEBUG instoffset %jd\n", (intmax_t)(vm.currentFrame->ip - vm.currentFrame->ip_root));
     KLOX_TRACE_ONLY(instruction_count++);
 
 #ifdef DEBUG_TRACE_EXECUTION
@@ -885,7 +901,7 @@ static InterpretResult run() {
     triframes_print(&(vm.triframes));
 
     disassembleInstruction(&vm.currentFrame->closure.clip().cp()->function.clip().cp()->chunk,
-        (int)(vm.currentFrame->ip - vm.currentFrame->closure.clip().cp()->function.clip().cp()->chunk.code.clp().cp()));
+        (int)(vm.currentFrame->ip - vm.currentFrame->ip_root));
 
     assert(vm.currentFrame->slots == tristack_at(&(vm.tristack), vm.currentFrame->slotsIndex));
     assert(vm.currentFrame->slotsIndex >= vm.tristack.abi);
