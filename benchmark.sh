@@ -28,3 +28,4 @@ do
   ls -lh map-* gc-*
 done
 
+exit 0
