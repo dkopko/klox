@@ -6,7 +6,7 @@ class Foo {
 
 var start = clock();
 var i = 0;
-while (i < 62500) {
+while (i < 50000) {
   Foo();
   Foo();
   Foo();
