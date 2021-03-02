@@ -18,8 +18,6 @@
 
 #define GC_HEAP_GROW_FACTOR 2
 
-static int gciteration = 0;
-
 #if !KLOX_SYNC_GC
 #if PROVOKE_RESIZE_DURING_GC
 static bool resize_during_gc_already_provoked = false;
@@ -810,9 +808,8 @@ void printStateOfWorld(const char *desc) {
   int ret;
 
   (void)ret;
-  (void)gciteration;
 
-  KLOX_TRACE("===== BEGIN STATE OF WORLD %s (gc: %d) =====\n", desc, gciteration);
+  KLOX_TRACE("===== BEGIN STATE OF WORLD %s (gc: %u) =====\n", desc, gc_integration_epoch);
 
   KLOX_TRACE("----- begin objtable (a:%ju, asz:%zu, b:%ju, bsz:%zu, c:%ju, csz:%zu)-----\n",
              thread_objtable.sm_a.root_node_offset,
@@ -870,7 +867,7 @@ void printStateOfWorld(const char *desc) {
   }
   KLOX_TRACE("----- end vm.openUpvalues -----\n");
 
-  KLOX_TRACE("===== END STATE OF WORLD %s (gc: %d) =====\n", desc, gciteration);
+  KLOX_TRACE("===== END STATE OF WORLD %s (gc: %u) =====\n", desc, gc_integration_epoch);
 }
 
 void
@@ -1011,8 +1008,8 @@ void collectGarbage() {
     new_lower_bound = pinned_lower_bound;
 
 #ifdef DEBUG_TRACE_GC
-  KLOX_TRACE("====== BEGIN GC %d nestlevel:%d, NEW_LOWER_BOUND:%ju, exec_phase:%d\n",
-             gciteration, gcnestlevel++, (uintmax_t)new_lower_bound, exec_phase);
+  KLOX_TRACE("====== BEGIN GC %u nestlevel:%d, NEW_LOWER_BOUND:%ju, exec_phase:%d\n",
+             gc_integration_epoch, gcnestlevel++, (uintmax_t)new_lower_bound, exec_phase);
   KLOX_TRACE_ONLY(printStateOfWorld("pre-gc"));
 #endif
 
@@ -1218,7 +1215,7 @@ void integrateGCResponse(struct gc_request_response *rr) {
   {
     CallFrame* frame = triframes_currentFrame(&(vm.triframes));
     if (!frame->has_ip_offset) {
-      assert(frame->functionP == frame->closure.clip().cp()->function.clip().cp());
+      assert(frame->functionP == frame->function.clip().cp());
       assert(frame->constantsValuesP == frame->functionP->chunk.constants.values.clp().cp());
       assert(frame->ip_root == frame->functionP->chunk.code.clp().cp());
       frame->ip_offset = frame->ip - frame->ip_root;
@@ -1289,7 +1286,7 @@ void integrateGCResponse(struct gc_request_response *rr) {
     //Restore the fact that the present frame uses the ip member of the union.
     CallFrame *frame = triframes_currentFrame(&(vm.triframes));
     if (frame->has_ip_offset) {
-      frame->functionP = frame->closure.clip().cp()->function.clip().cp();
+      frame->functionP = frame->function.clip().cp();
       frame->constantsValuesP = frame->functionP->chunk.constants.values.clp().cp();
       frame->ip_root = frame->functionP->chunk.code.clp().cp();
       frame->ip = frame->ip_root + frame->ip_offset;
@@ -1352,9 +1349,10 @@ void integrateGCResponse(struct gc_request_response *rr) {
 
 #ifdef DEBUG_TRACE_GC
   KLOX_TRACE_ONLY(printStateOfWorld("post-gc"));
-  KLOX_TRACE("====== END GC %d collected %ld bytes (from %ld to %ld) next at %ld, nestlevel:%d, final datasize:%ju, exec_phase:%d\n",
-             gciteration, rr->req.bytes_allocated_before_gc - vm.bytesAllocated, rr->req.bytes_allocated_before_gc, vm.bytesAllocated,
+  KLOX_TRACE("====== END GC %u collected %ld bytes (from %ld to %ld) next at %ld, nestlevel:%d, final datasize:%ju, exec_phase:%d\n",
+             gc_integration_epoch, rr->req.bytes_allocated_before_gc - vm.bytesAllocated, rr->req.bytes_allocated_before_gc, vm.bytesAllocated,
              vm.nextGC, --gcnestlevel, (uintmax_t)cb_data_size(thread_cb), exec_phase);
-  ++gciteration;
 #endif
+
+  ++gc_integration_epoch;
 }

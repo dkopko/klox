@@ -31,6 +31,7 @@ __thread cb_offset_t       pinned_lower_bound   = CB_NULL;
 
 __thread bool              on_main_thread = false;
 __thread bool              can_print      = false;
+__thread unsigned int      gc_integration_epoch;
 
 static __thread struct rcbp      *thread_rcbp_list        = NULL;
 
@@ -686,7 +687,7 @@ klox_on_cb_resize(struct cb *old_cb, struct cb *new_cb)
         assert(!newFrame->has_ip_offset);
 
         size_t old_ip_offset = oldFrame->ip - oldFrame->ip_root;
-        newFrame->functionP = newFrame->closure.crip(new_cb).cp()->function.crip(new_cb).cp();
+        newFrame->functionP = newFrame->function.crip(new_cb).cp();
         newFrame->constantsValuesP = newFrame->functionP->chunk.constants.values.crp(new_cb).cp();
         newFrame->ip_root = newFrame->functionP->chunk.code.crp(new_cb).cp();
         newFrame->ip = newFrame->ip_root + old_ip_offset;
@@ -1657,7 +1658,7 @@ gc_perform(struct gc_request_response *rr)
 
       // Revise the pointers internal to the CallFrame.
       size_t ip_offset = src->ip - src->ip_root;
-      dest->functionP = dest->closure.crip_alt(rr->req.orig_cb, &consObjtable).cp()->function.crip_alt(rr->req.orig_cb, &consObjtable).cp();
+      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &consObjtable).cp();
       dest->constantsValuesP = dest->functionP->chunk.constants.values.crp(rr->req.orig_cb).cp();
       dest->ip_root = dest->functionP->chunk.code.crp(rr->req.orig_cb).cp();
       dest->ip = dest->ip_root + ip_offset;
@@ -1681,7 +1682,7 @@ gc_perform(struct gc_request_response *rr)
 
       // Revise the pointers internal to the CallFrame.
       size_t ip_offset = src->ip - src->ip_root;
-      dest->functionP = dest->closure.crip_alt(rr->req.orig_cb, &consObjtable).cp()->function.crip_alt(rr->req.orig_cb, &consObjtable).cp();
+      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &consObjtable).cp();
       dest->constantsValuesP = dest->functionP->chunk.constants.values.crp(rr->req.orig_cb).cp();
       dest->ip_root = dest->functionP->chunk.code.crp(rr->req.orig_cb).cp();
       dest->ip = dest->ip_root + ip_offset;

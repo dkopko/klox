@@ -21,6 +21,7 @@ extern __thread struct ObjTable   thread_objtable;
 extern __thread cb_offset_t       pinned_lower_bound;
 extern __thread bool              on_main_thread;
 extern __thread bool              can_print;
+extern __thread unsigned int      gc_integration_epoch;
 
 // GC thread state.
 //FIXME make these to gc-thread-local.

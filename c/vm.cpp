@@ -217,16 +217,18 @@ triframes_ensureCurrentFrameIsMutable(TriFrames *tf) {
 fixup_slots:
 
   //Rederive cached pointers of the returned-to frame.
-  //FIXME this is too expensive on every OP_RETURN, just do it if collection epoch of frame != present collection epoch
-  unsigned int ip_offset = 0;
-  if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
-    ip_offset = vm.currentFrame->ip - vm.currentFrame->ip_root;
-  }
-  vm.currentFrame->functionP = vm.currentFrame->closure.clip().cp()->function.clip().cp();
-  vm.currentFrame->constantsValuesP = vm.currentFrame->functionP->chunk.constants.values.clp().cp();
-  vm.currentFrame->ip_root = vm.currentFrame->functionP->chunk.code.clp().cp();
-  if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
-    vm.currentFrame->ip = vm.currentFrame->ip_root + ip_offset;
+  if (__builtin_expect(0, !!(vm.currentFrame->gc_integration_epoch != gc_integration_epoch))) {
+    unsigned int ip_offset = 0;
+    if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
+      ip_offset = vm.currentFrame->ip - vm.currentFrame->ip_root;
+    }
+    vm.currentFrame->functionP = vm.currentFrame->function.clip().cp();
+    vm.currentFrame->constantsValuesP = vm.currentFrame->functionP->chunk.constants.values.clp().cp();
+    vm.currentFrame->ip_root = vm.currentFrame->functionP->chunk.code.clp().cp();
+    if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
+      vm.currentFrame->ip = vm.currentFrame->ip_root + ip_offset;
+    }
+    vm.currentFrame->gc_integration_epoch = gc_integration_epoch;
   }
 
   if (vm.currentFrame->slotsIndex < vm.tristack.abi) {
@@ -398,10 +400,11 @@ extern inline Value peek(int distance) {
 
 static bool call(OID<ObjClosure> closure, int argCount) {
   CallFrame* frame;
-  const ObjFunction* f = closure.clip().cp()->function.clip().cp();
+  OID<ObjFunction> function = closure.clip().cp()->function;
+  const ObjFunction *functionP = function.clip().cp();
 
-  if (argCount != f->arity) {
-    runtimeError("Expected %d arguments but got %d.", f->arity, argCount);
+  if (argCount != functionP->arity) {
+    runtimeError("Expected %d arguments but got %d.", functionP->arity, argCount);
     return false;
   }
 
@@ -413,11 +416,13 @@ static bool call(OID<ObjClosure> closure, int argCount) {
   triframes_enterFrame(&(vm.triframes));
   frame = triframes_currentFrame(&(vm.triframes));
   frame->closure = closure;
-  frame->functionP = f;
-  frame->constantsValuesP = f->chunk.constants.values.clp().cp();
-  frame->ip_root = f->chunk.code.clp().cp();
+  frame->function = function;
+  frame->functionP = functionP;
+  frame->constantsValuesP = functionP->chunk.constants.values.clp().cp();
+  frame->ip_root = functionP->chunk.code.clp().cp();
   frame->ip = frame->ip_root;
   frame->has_ip_offset = false;
+  frame->gc_integration_epoch = gc_integration_epoch;
 
   // +1 to include either the called function or the receiver.
   frame->slotsCount = argCount + 1;

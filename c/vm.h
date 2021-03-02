@@ -10,6 +10,7 @@
 
 typedef struct {
   OID<ObjClosure> closure;
+  OID<ObjFunction> function;
   const ObjFunction *functionP;
   const Value *constantsValuesP;
   union {
@@ -21,6 +22,7 @@ typedef struct {
   unsigned int slotsIndex;  // the index within the stack where slots field points.
   unsigned int slotsCount;
   bool has_ip_offset;
+  unsigned int gc_integration_epoch;
 } CallFrame;
 
 typedef struct {
