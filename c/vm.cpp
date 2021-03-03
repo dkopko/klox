@@ -217,7 +217,7 @@ triframes_ensureCurrentFrameIsMutable(TriFrames *tf) {
 fixup_slots:
 
   //Rederive cached pointers of the returned-to frame.
-  if (__builtin_expect(0, !!(vm.currentFrame->gc_integration_epoch != gc_integration_epoch))) {
+  if (__builtin_expect(!!(vm.currentFrame->gc_integration_epoch != gc_integration_epoch), 0)) {
     unsigned int ip_offset = 0;
     if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
       ip_offset = vm.currentFrame->ip - vm.currentFrame->ip_root;
