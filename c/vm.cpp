@@ -218,7 +218,7 @@ fixup_slots:
 
   //Rederive cached pointers of the returned-to frame.
   if (__builtin_expect(!!(vm.currentFrame->gc_integration_epoch != gc_integration_epoch), 0)) {
-    unsigned int ip_offset = 0;
+    unsigned int ip_offset;
     if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
       ip_offset = vm.currentFrame->ip - vm.currentFrame->ip_root;
     }
@@ -226,7 +226,11 @@ fixup_slots:
     vm.currentFrame->constantsValuesP = vm.currentFrame->functionP->chunk.constants.values.clp().cp();
     vm.currentFrame->ip_root = vm.currentFrame->functionP->chunk.code.clp().cp();
     if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
       vm.currentFrame->ip = vm.currentFrame->ip_root + ip_offset;
+#pragma GCC diagnostic pop
+      __builtin_prefetch(vm.currentFrame->ip);
     }
     vm.currentFrame->gc_integration_epoch = gc_integration_epoch;
   }
