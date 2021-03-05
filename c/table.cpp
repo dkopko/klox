@@ -104,7 +104,7 @@ tableSet(Table* table, Value key, Value value)
   ret = cb_bst_insert(&thread_cb,
                       &thread_region,
                       &(table->root_a),
-                      thread_cutoff_offset,
+                      a_write_cutoff,
                       &key_term,
                       &value_term);
   assert(ret == 0);
@@ -127,7 +127,7 @@ tableDelete(Table *table,
   ret = cb_bst_insert(&thread_cb,
                       &thread_region,
                       &(table->root_a),
-                      thread_cutoff_offset,
+                      a_write_cutoff,
                       &key_term,
                       &value_term);
   return (ret == 0);
