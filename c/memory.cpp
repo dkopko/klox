@@ -1362,7 +1362,7 @@ void integrateGCResponse(struct gc_request_response *rr) {
   if (advance_len > 0) {
     //Clobber old contents.
 #ifdef DEBUG_TRACE_GC
-    KLOX_TRACE("clobbering range [%ju,%ju) of cb %p (size: %ju, start: %ju, end: %ju)\n",
+    KLOX_TRACE("clobbering range [%ju,%ju) of cb %p (size: %ju, start: %ju, cursor: %ju)\n",
                (uintmax_t)cb_start(thread_cb),
                (uintmax_t)rr->req.new_lower_bound,
                thread_cb,

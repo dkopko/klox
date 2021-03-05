@@ -517,7 +517,7 @@ resolveAsMutableLayer(ObjID objid)
   o = objtable_lookup_A(&thread_objtable, objid);
   if (o != CB_NULL) {
     //KLOX_TRACE("#%ju@%ju found in objtable A\n", (uintmax_t)objid.id, (uintmax_t)o);
-    assert(cb_offset_cmp(o, thread_cutoff_offset) > 0);
+    assert(cb_offset_cmp(o, a_read_cutoff) > 0);
     return o;
   }
 
@@ -525,7 +525,7 @@ resolveAsMutableLayer(ObjID objid)
   if (o != CB_NULL) {
     //KLOX_TRACE("#%ju@%ju found in objtable B\n", (uintmax_t)objid.id, (uintmax_t)o);
     cb_offset_t layer_o = deriveMutableObjectLayer(&thread_cb, &thread_region, objid, o);
-    assert(cb_offset_cmp(layer_o, thread_cutoff_offset) > 0);
+    assert(cb_offset_cmp(layer_o, b_read_cutoff) > 0);
     objtable_add_at(&thread_objtable, objid, layer_o);
     //KLOX_TRACE("#%ju@%ju is new mutable layer in objtable A\n", (uintmax_t)objid_.id, layer_o);
     //KLOX_TRACE_ONLY(printObjectValue(OBJ_VAL(objid)));
@@ -537,7 +537,7 @@ resolveAsMutableLayer(ObjID objid)
   assert(o != CB_NULL);
   //KLOX_TRACE("#%ju@%ju found in objtable C\n", (uintmax_t)objid.id, (uintmax_t)o);
   cb_offset_t layer_o = deriveMutableObjectLayer(&thread_cb, &thread_region, objid, o);
-  assert(cb_offset_cmp(layer_o, thread_cutoff_offset) > 0);
+  assert(cb_offset_cmp(layer_o, c_read_cutoff) > 0);
   objtable_add_at(&thread_objtable, objid, layer_o);
   //KLOX_TRACE("#%ju@%ju is new mutable layer in objtable A\n", (uintmax_t)objid_.id, layer_o);
   //KLOX_TRACE_ONLY(printObjectValue(OBJ_VAL(objid)));
