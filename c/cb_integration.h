@@ -16,7 +16,6 @@ extern __thread struct cb        *thread_cb;
 extern __thread void             *thread_ring_start;
 extern __thread cb_mask_t         thread_ring_mask;
 extern __thread struct cb_region  thread_region;
-extern __thread cb_offset_t       thread_cutoff_offset;
 extern __thread struct ObjTable   thread_objtable;
 extern __thread cb_offset_t       pinned_lower_bound;
 extern __thread bool              on_main_thread;

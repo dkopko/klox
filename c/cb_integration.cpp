@@ -19,7 +19,6 @@ __thread struct cb        *thread_cb            = NULL;
 __thread void             *thread_ring_start;
 __thread cb_mask_t         thread_ring_mask;
 __thread struct cb_region  thread_region;
-__thread cb_offset_t       thread_cutoff_offset = (cb_offset_t)0ULL;
 __thread struct ObjTable   thread_objtable;
 
 //NOTE: For tandem allocations not yet having a presence in the VM state, we

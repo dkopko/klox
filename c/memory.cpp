@@ -1191,7 +1191,6 @@ void collectGarbage() {
 #endif  //KLOX_TRACE_ENABLE
 
   last_point_of_gc = this_point_of_gc;
-  thread_cutoff_offset = new_lower_bound;
 
   gc_submit_request(rr.mp());
 
