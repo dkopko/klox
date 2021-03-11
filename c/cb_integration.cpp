@@ -139,7 +139,7 @@ klox_no_external_size2(const struct cb *cb,
 bool
 objtable_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v)
 {
-  return cb_offset_cmp((cb_offset_t)v, read_cutoff) < 0;
+  return PURE_OFFSET((cb_offset_t)v) != CB_NULL && cb_offset_cmp(PURE_OFFSET((cb_offset_t)v), read_cutoff) < 0;
 }
 
 bool

@@ -94,7 +94,7 @@ structmap_lookup(const struct cb        *cb,
         return false;
 
       case STRUCTMAP_ENTRY_ITEM:
-        if (key == entry->item.key) {
+        if (key == entry->item.key && !sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
           *value = entry->item.value;
           return true;
         } else {
@@ -129,7 +129,7 @@ structmap_contains_key(const struct cb        *cb,
                        uint64_t                key)
 {
   uint64_t v;
-  return (structmap_lookup(cb, read_cutoff, sm, key, &v) == true);
+  return structmap_lookup(cb, read_cutoff, sm, key, &v);
 }
 
 unsigned int

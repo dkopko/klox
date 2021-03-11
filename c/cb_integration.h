@@ -297,11 +297,7 @@ objtablelayer_lookup(const struct cb *cb,
                      uint64_t         key,
                      uint64_t        *value)
 {
-  //NOTE: The value field of structmap is sometimes used to hold cb_offset_t's
-  // (for ObjTableLayer) and sometimes double-encoded Values (for class methods
-  // and instance fields), so for the cb_offset_t case of ObjTableLayer the
-  // offset must be compared against the read_cutoff externally.
-  return (structmap_lookup(cb, read_cutoff, &(layer->sm), key, value) && *value != CB_NULL && cb_offset_cmp(*value, read_cutoff) >= 0);
+  return (structmap_lookup(cb, read_cutoff, &(layer->sm), key, value) && *value != CB_NULL);
 }
 
 
