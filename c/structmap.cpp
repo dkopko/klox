@@ -134,8 +134,7 @@ structmap_insert(struct cb        **cb,
         entry->type = STRUCTMAP_ENTRY_ITEM;
         entry->item.key = key;
         entry->item.value = value;
-        entry->item.size = sm->sizeof_value(*cb, value);
-        structmap_external_size_adjust(sm, (ssize_t)entry->item.size);
+        structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value));
         goto exit_loop;
 
       case STRUCTMAP_ENTRY_ITEM: {
@@ -144,12 +143,9 @@ structmap_insert(struct cb        **cb,
         // fulfills the 'is_value_read_cutoff' predicate.
         bool is_cutoff;
         if (entry->item.key == key || (is_cutoff = sm->is_value_read_cutoff(read_cutoff, entry->item.value))) {
-          size_t size = sm->sizeof_value(*cb, value);
-          ssize_t delta_size = (ssize_t)size - (is_cutoff ? 0 : (ssize_t)entry->item.size);
-          structmap_external_size_adjust(sm, delta_size);
+          structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value));
           entry->item.key = key;
           entry->item.value = value;
-          entry->item.size = size;
           goto exit_loop;
         }
 
@@ -164,7 +160,6 @@ structmap_insert(struct cb        **cb,
         child_entry->type = STRUCTMAP_ENTRY_ITEM;
         child_entry->item.key = entry->item.key;
         child_entry->item.value = entry->item.value;
-        child_entry->item.size = entry->item.size;
 
         // Make the old location of the key/value now point to the nested child node.
         entry->type = STRUCTMAP_ENTRY_NODE;

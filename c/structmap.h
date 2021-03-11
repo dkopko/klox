@@ -35,7 +35,7 @@ struct structmap_entry
   enum structmap_entry_type type;
   union
   {
-    struct { uint64_t key; uint64_t value; size_t size; } item;
+    struct { uint64_t key; uint64_t value; } item;
     struct { uint64_t offset; } node;
   };
 };
