@@ -88,37 +88,27 @@ structmap_lookup(const struct cb        *cb,
   const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
   unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
 
-  while (true) {
-    switch (entry->type) {
-      case STRUCTMAP_ENTRY_EMPTY:
-        return false;
-
-      case STRUCTMAP_ENTRY_ITEM:
-        if (key == entry->item.key && !sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
-          *value = entry->item.value;
-          return true;
-        } else {
-          return false;
-        }
-
-      case STRUCTMAP_ENTRY_NODE: {
-        if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return false; }
-        const struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
-        unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
-        entry = &(child_node->entries[child_route]);
-        key_route_base += STRUCTMAP_LEVEL_BITS;
-      }
-      break;
-
-#ifndef NDEBUG
-      default:
-        printf("Bogus structmap entry type: %d\n", entry->type);
-        assert(false);
-        break;
-#endif
+  if (entry->type == STRUCTMAP_ENTRY_ITEM) {
+has_item:
+    if (key == entry->item.key && !sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
+      *value = entry->item.value;
+      return true;
     }
+    return false;
   }
 
+  while (entry->type == STRUCTMAP_ENTRY_NODE) {
+      if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return false; }
+      const struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
+      unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+      entry = &(child_node->entries[child_route]);
+      key_route_base += STRUCTMAP_LEVEL_BITS;
+  }
+
+  if (entry->type == STRUCTMAP_ENTRY_ITEM)
+    goto has_item;
+
+  assert(entry->type == STRUCTMAP_ENTRY_EMPTY);
   return false;
 }
 
