@@ -514,9 +514,9 @@ resolveAsMutableLayer(ObjID objid)
   assert(exec_phase == EXEC_PHASE_COMPILE || exec_phase == EXEC_PHASE_INTERPRET || exec_phase == EXEC_PHASE_FREE_WHITE_SET);
 
   o = objtable_lookup_A(&thread_objtable, objid);
-  if (o != CB_NULL) {
+  if (o != CB_NULL && cb_offset_cmp(o, a_write_cutoff) >= 0) {
     //KLOX_TRACE("#%ju@%ju found in objtable A\n", (uintmax_t)objid.id, (uintmax_t)o);
-    assert(cb_offset_cmp(o, a_read_cutoff) > 0);
+    assert(cb_offset_cmp(o, a_read_cutoff) >= 0);
     return o;
   }
 
