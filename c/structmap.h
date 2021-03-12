@@ -115,10 +115,27 @@ structmap_contains_key(const struct cb        *cb,
 }
 
 unsigned int
+structmap_would_collide_node_count_slowpath(const struct cb        *cb,
+                                            cb_offset_t             read_cutoff,
+                                            const struct structmap *sm,
+                                            uint64_t                key);
+
+extern inline unsigned int
 structmap_would_collide_node_count(const struct cb        *cb,
                                    cb_offset_t             read_cutoff,
                                    const struct structmap *sm,
-                                   uint64_t                key);
+                                   uint64_t                key)
+{
+  const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+
+  if (entry->type == STRUCTMAP_ENTRY_EMPTY
+      || (entry->type == STRUCTMAP_ENTRY_ITEM
+          && (entry->item.key == key || sm->is_value_read_cutoff(read_cutoff, entry->item.value)))) {
+    return 0;
+  }
+
+  return structmap_would_collide_node_count_slowpath(cb, read_cutoff, sm, key);
+}
 
 typedef int (*structmap_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
 

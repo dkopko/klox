@@ -242,10 +242,10 @@ structmap_lookup_slowpath(const struct cb        *cb,
 }
 
 unsigned int
-structmap_would_collide_node_count(const struct cb        *cb,
-                                   cb_offset_t             read_cutoff,
-                                   const struct structmap *sm,
-                                   uint64_t                key)
+structmap_would_collide_node_count_slowpath(const struct cb        *cb,
+                                            cb_offset_t             read_cutoff,
+                                            const struct structmap *sm,
+                                            uint64_t                key)
 {
   //NOTE: The purpose of this function is to determine how many nodes would need
   // to additionally be created for the target structmap 'sm' if key 'key' were
