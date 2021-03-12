@@ -260,60 +260,41 @@ structmap_would_collide_node_count(const struct cb        *cb,
   const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
   unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
 
-  while (true) {
-    switch (entry->type) {
-      case STRUCTMAP_ENTRY_EMPTY:
-        // We have (possibly traversed and) reached an empty slot.  There would
-        // be no need to create any new nodes to resolve slot collisions if this
-        // key were added to this structmap.
-        return 0;
-
-      case STRUCTMAP_ENTRY_ITEM: {
-        if (entry->item.key == key || sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
-          // The key is already present, or the mapping is considered below the
-          // read_cutoff (having a value which fulfills the 'is_value_read_cutoff'
-          // predicate.  This is equivalent to a STRUCTMAP_ENTRY_EMPTY empty slot.
-          return 0;
-        }
-
-        // Otherwise, there is a collision in this slot at this level.  Figure
-        // out how many nodes would need to be created to reach the point of
-        // slot independence for the existing key and the key being evaluated.
-        unsigned int addl_nodes = 1;
-        unsigned int existing_key_child_slot = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
-        unsigned int key_child_slot = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
-
-        while (key_child_slot == existing_key_child_slot) {
-          key_route_base += STRUCTMAP_LEVEL_BITS;
-          ++addl_nodes;
-          existing_key_child_slot = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
-          key_child_slot = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
-        }
-
-        return addl_nodes;
-      }
-
-      case STRUCTMAP_ENTRY_NODE: {
-        //Pretend entries which are actually below the read_cutoff do not exist.
-        if (cb_offset_cmp(entry->node.offset, read_cutoff) == -1) {
-          // This is equivalent to a STRUCTMAP_ENTRY_EMPTY empty slot.
-          return 0;
-        }
-        struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
-        unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
-        entry = &(child_node->entries[child_route]);
-        key_route_base += STRUCTMAP_LEVEL_BITS;
-      }
-      break;
-
-#ifndef NDEBUG
-      default:
-        printf("Bogus structmap entry type: %d\n", entry->type);
-        assert(false);
-        return 0;
-#endif
-    }
+  while (entry->type == STRUCTMAP_ENTRY_NODE) {
+      if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return 0; }
+      const struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
+      unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+      entry = &(child_node->entries[child_route]);
+      key_route_base += STRUCTMAP_LEVEL_BITS;
   }
+  assert(entry->type == STRUCTMAP_ENTRY_EMPTY || entry->type == STRUCTMAP_ENTRY_ITEM);
+
+  if (entry->type == STRUCTMAP_ENTRY_EMPTY)
+    return 0;
+
+  assert(entry->type == STRUCTMAP_ENTRY_ITEM);
+  if (entry->item.key == key || sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
+    // The key is already present, or the mapping is considered below the
+    // read_cutoff (having a value which fulfills the 'is_value_read_cutoff'
+    // predicate.  This is equivalent to a STRUCTMAP_ENTRY_EMPTY empty slot.
+    return 0;
+  }
+
+  // Otherwise, there is a collision in this slot at this level.  Figure
+  // out how many nodes would need to be created to reach the point of
+  // slot independence for the existing key and the key being evaluated.
+  unsigned int addl_nodes = 1;
+  unsigned int existing_key_child_slot = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+  unsigned int key_child_slot = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+
+  while (key_child_slot == existing_key_child_slot) {
+    key_route_base += STRUCTMAP_LEVEL_BITS;
+    ++addl_nodes;
+    existing_key_child_slot = (entry->item.key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+    key_child_slot = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+  }
+
+  return addl_nodes;
 }
 
 int
