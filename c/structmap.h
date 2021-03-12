@@ -78,6 +78,13 @@ structmap_insert(struct cb        **cb,
                  uint64_t           key,
                  uint64_t           value);
 
+bool
+structmap_lookup_slowpath(const struct cb        *cb,
+                          cb_offset_t             read_cutoff,
+                          const struct structmap *sm,
+                          uint64_t                key,
+                          uint64_t               *value);
+
 extern inline bool
 structmap_lookup(const struct cb        *cb,
                  cb_offset_t             read_cutoff,
@@ -86,30 +93,15 @@ structmap_lookup(const struct cb        *cb,
                  uint64_t               *value)
 {
   const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
-  unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
 
-  if (entry->type == STRUCTMAP_ENTRY_ITEM) {
-has_item:
-    if (key == entry->item.key && !sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
-      *value = entry->item.value;
-      return true;
-    }
-    return false;
+  if (entry->type == STRUCTMAP_ENTRY_ITEM
+      && key == entry->item.key
+      && !sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
+    *value = entry->item.value;
+    return true;
   }
 
-  while (entry->type == STRUCTMAP_ENTRY_NODE) {
-      if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return false; }
-      const struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
-      unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
-      entry = &(child_node->entries[child_route]);
-      key_route_base += STRUCTMAP_LEVEL_BITS;
-  }
-
-  if (entry->type == STRUCTMAP_ENTRY_ITEM)
-    goto has_item;
-
-  assert(entry->type == STRUCTMAP_ENTRY_EMPTY);
-  return false;
+  return structmap_lookup_slowpath(cb, read_cutoff, sm, key, value);
 }
 
 extern inline bool

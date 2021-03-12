@@ -211,6 +211,36 @@ exit_loop:
   return 0;
 }
 
+bool
+structmap_lookup_slowpath(const struct cb        *cb,
+                          cb_offset_t             read_cutoff,
+                          const struct structmap *sm,
+                          uint64_t                key,
+                          uint64_t               *value)
+{
+  const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+  unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
+
+  //FIXME consider cb_at_immed().
+
+  while (entry->type == STRUCTMAP_ENTRY_NODE) {
+      if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return false; }
+      const struct structmap_node *child_node = (struct structmap_node *)cb_at(cb, entry->node.offset);
+      unsigned int child_route = (key >> key_route_base) & ((1 << STRUCTMAP_LEVEL_BITS) - 1);
+      entry = &(child_node->entries[child_route]);
+      key_route_base += STRUCTMAP_LEVEL_BITS;
+  }
+
+  if (entry->type == STRUCTMAP_ENTRY_ITEM
+      && key == entry->item.key
+      && !sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
+    *value = entry->item.value;
+    return true;
+  }
+
+  return false;
+}
+
 unsigned int
 structmap_would_collide_node_count(const struct cb        *cb,
                                    cb_offset_t             read_cutoff,
