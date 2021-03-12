@@ -105,13 +105,13 @@ structmap_select_modifiable_node(struct cb        **cb,
 }
 
 int
-structmap_insert(struct cb        **cb,
-                 struct cb_region  *region,
-                 cb_offset_t        read_cutoff,
-                 cb_offset_t        write_cutoff,
-                 struct structmap  *sm,
-                 uint64_t           key,
-                 uint64_t           value)
+structmap_insert_slowpath(struct cb        **cb,
+                          struct cb_region  *region,
+                          cb_offset_t        read_cutoff,
+                          cb_offset_t        write_cutoff,
+                          struct structmap  *sm,
+                          uint64_t           key,
+                          uint64_t           value)
 {
   int ret;
 
@@ -141,8 +141,7 @@ structmap_insert(struct cb        **cb,
         // Replace the value of the key, if the key is already present, or if
         // the mapping is considered below the read cutoff (having a value which
         // fulfills the 'is_value_read_cutoff' predicate.
-        bool is_cutoff;
-        if (entry->item.key == key || (is_cutoff = sm->is_value_read_cutoff(read_cutoff, entry->item.value))) {
+        if (entry->item.key == key || sm->is_value_read_cutoff(read_cutoff, entry->item.value)) {
           structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value));
           entry->item.key = key;
           entry->item.value = value;

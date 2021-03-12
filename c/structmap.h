@@ -69,14 +69,13 @@ static const size_t STRUCTMAP_MODIFICATION_SIZE = (STRUCTMAP_MODIFICATION_MAX_NO
 
 void structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, structmap_is_value_read_cutoff_t is_value_read_cutoff);
 
-int
-structmap_insert(struct cb        **cb,
-                 struct cb_region  *region,
-                 cb_offset_t        read_cutoff,
-                 cb_offset_t        write_cutoff,
-                 struct structmap  *sm,
-                 uint64_t           key,
-                 uint64_t           value);
+extern inline void
+structmap_external_size_adjust(struct structmap *sm,
+                               ssize_t           adjustment)
+{
+  assert(adjustment >= 0 || -adjustment < (ssize_t)sm->total_external_size);
+  sm->total_external_size = (size_t)((ssize_t)sm->total_external_size + adjustment);
+}
 
 bool
 structmap_lookup_slowpath(const struct cb        *cb,
@@ -102,6 +101,59 @@ structmap_lookup(const struct cb        *cb,
   }
 
   return structmap_lookup_slowpath(cb, read_cutoff, sm, key, value);
+}
+
+int
+structmap_insert_slowpath(struct cb        **cb,
+                          struct cb_region  *region,
+                          cb_offset_t        read_cutoff,
+                          cb_offset_t        write_cutoff,
+                          struct structmap  *sm,
+                          uint64_t           key,
+                          uint64_t           value);
+
+extern inline int
+structmap_insert(struct cb        **cb,
+                 struct cb_region  *region,
+                 cb_offset_t        read_cutoff,
+                 cb_offset_t        write_cutoff,
+                 struct structmap  *sm,
+                 uint64_t           key,
+                 uint64_t           value)
+{
+  assert(cb_offset_cmp(read_cutoff, write_cutoff) <= 0);
+  assert(key > 0);
+
+  struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+
+  if (entry->type == STRUCTMAP_ENTRY_EMPTY
+      || (entry->type == STRUCTMAP_ENTRY_ITEM
+          && (entry->item.key == key || sm->is_value_read_cutoff(read_cutoff, entry->item.value)))) {
+    entry->type = STRUCTMAP_ENTRY_ITEM;
+    entry->item.key = key;
+    entry->item.value = value;
+    structmap_external_size_adjust(sm, (ssize_t)sm->sizeof_value(*cb, value));
+
+    if (sm->lowest_inserted_key == 0 || key < sm->lowest_inserted_key)
+      sm->lowest_inserted_key = key;
+
+    if (key > sm->highest_inserted_key)
+      sm->highest_inserted_key = key;
+
+#ifndef NDEBUG
+    {
+      uint64_t test_v;
+      bool lookup_success = structmap_lookup(*cb, write_cutoff, sm, key, &test_v);
+      //printf("lookup_success? %d, same? %d:  #%ju -> @%ju\n", lookup_success, test_v == value, (uintmax_t)key, (uintmax_t)value);
+      assert(lookup_success);
+      assert(test_v == value);
+    }
+#endif
+
+    return 0;
+  }
+
+  return structmap_insert_slowpath(cb, region, read_cutoff, write_cutoff, sm, key, value);
 }
 
 extern inline bool
@@ -188,14 +240,6 @@ extern inline ssize_t
 structmap_layer_external_size(const struct structmap *sm)
 {
   return (ssize_t)sm->total_external_size - (ssize_t)sm->layer_mark_external_size;
-}
-
-extern inline void
-structmap_external_size_adjust(struct structmap *sm,
-                               ssize_t           adjustment)
-{
-  assert(adjustment >= 0 || -adjustment < (ssize_t)sm->total_external_size);
-  sm->total_external_size = (size_t)((ssize_t)sm->total_external_size + adjustment);
 }
 
 extern inline size_t
