@@ -92,7 +92,7 @@ int main(int argc, const char* argv[]) {
   //cb_params.mmap_flags = MAP_PRIVATE | MAP_POPULATE; //FIXME doesn't work (klox_debug suite failures)
   //cb_params.mmap_flags = MAP_SHARED | MAP_ANONYMOUS | MAP_POPULATE; //FIXME doesn't work (klox_debug suite failures)
   cb_params.mmap_flags = MAP_SHARED | MAP_POPULATE;
-  //cb_params.flags |= CB_PARAMS_F_MLOCK;  //FIXME turned off once ObjTableLayer O(1) work caused mlock() failures.
+  cb_params.flags |= CB_PARAMS_F_MLOCK;
   cb_params.on_resize = &klox_on_cb_resize;
   thread_cb = cb_create(&cb_params, sizeof(cb_params));
   if (!thread_cb) {
