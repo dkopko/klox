@@ -71,13 +71,11 @@ OID<ObjClass> newClass(OID<ObjString> name) {
   (void)ret;
 
   CBO<ObjClass> klassCBO = ALLOCATE_OBJ(ObjClass, OBJ_CLASS);
-  struct structmap new_methods_sm;
-  ret = methods_layer_init(&thread_cb, &thread_region, &new_methods_sm);
-  assert(ret == 0);
-
   ObjClass* klass = klassCBO.mlp().mp();  //cb-resize-safe (no allocations in lifetime)
   klass->name = name;
-  klass->methods_sm = new_methods_sm;
+  ret = methods_layer_init(&thread_cb, &thread_region, &(klass->methods_sm));
+  assert(ret == 0);
+
   return assignObjectToID(klassCBO.co());
 }
 
@@ -111,16 +109,15 @@ OID<ObjFunction> newFunction() {
 }
 
 OID<ObjInstance> newInstance(OID<ObjClass> klass) {
-  int ret;
   CBO<ObjInstance> instanceCBO = ALLOCATE_OBJ(ObjInstance, OBJ_INSTANCE);
-  struct structmap new_fields_sm;
-  ret = fields_layer_init(&thread_cb, &thread_region, &new_fields_sm);
-  assert(ret == 0);
+  int ret;
+
+  (void)ret;
 
   ObjInstance* instance = instanceCBO.mlp().mp();  //cb-resize-safe (no allocations in lifetime)
   instance->klass = klass;
-  instance->fields_sm = new_fields_sm;
-  (void)ret;
+  ret = fields_layer_init(&thread_cb, &thread_region, &(instance->fields_sm));
+  assert(ret == 0);
 
   return assignObjectToID(instanceCBO.co());
 }

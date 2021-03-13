@@ -13,7 +13,6 @@
 extern __thread void *thread_ring_start;
 extern __thread cb_mask_t thread_ring_mask;
 
-static const int STRUCTMAP_FIRSTLEVEL_BITS = 0;
 static const int STRUCTMAP_LEVEL_BITS = 5;
 
 //NOTES:
@@ -45,6 +44,7 @@ struct structmap
     uint64_t     lowest_inserted_key;
     uint64_t     highest_inserted_key;
     cb_offset_t  root_node_offset; //FIXME remove, no longer used
+    unsigned int firstlevel_bits;
     unsigned int node_count;
     size_t       total_external_size;
     unsigned int layer_mark_node_count;
@@ -52,7 +52,8 @@ struct structmap
     structmap_value_size_t sizeof_value;
     structmap_is_value_read_cutoff_t is_value_read_cutoff;
 
-    struct structmap_entry entries[1 << STRUCTMAP_FIRSTLEVEL_BITS];
+    struct structmap_entry entries[1];
+    //NOTE: Immediately following this struct must be a structmap_entry[(1 << firstlevel_bits) - 1]
 };
 
 struct structmap_node
@@ -62,12 +63,39 @@ struct structmap_node
 
 
 // The maximum amount structmap_nodes we may need for a modification (insertion)
-// so that no CB resizes will happen.  This is ceil((64 - STRUCTMAP_FIRSTLEVEL_BITS) / STRUCTMAP_LEVEL_BITS).
-static const int STRUCTMAP_MODIFICATION_MAX_NODES = ((64 - STRUCTMAP_FIRSTLEVEL_BITS) / STRUCTMAP_LEVEL_BITS) + (int)!!((64 - STRUCTMAP_FIRSTLEVEL_BITS) % STRUCTMAP_LEVEL_BITS);
-static const size_t STRUCTMAP_MODIFICATION_SIZE = (STRUCTMAP_MODIFICATION_MAX_NODES * sizeof(struct structmap_node)) + alignof(struct structmap_node) - 1;  //Contiguous, so no need to include alignment.
+// This is ceil((64 - sm->firstlevel_bits) / STRUCTMAP_LEVEL_BITS).
+// On modification, this will be preallocated to ensure no CB resizes happen.
+extern inline int
+structmap_modification_max_nodes_by_firstlevel_bits(unsigned int firstlevel_bits)
+{
+  return ((64 - firstlevel_bits) / STRUCTMAP_LEVEL_BITS) + (int)!!((64 - firstlevel_bits) % STRUCTMAP_LEVEL_BITS);
+}
 
+extern inline int
+structmap_modification_max_nodes(const struct structmap *sm)
+{
+  return structmap_modification_max_nodes_by_firstlevel_bits(sm->firstlevel_bits);
+}
 
-void structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, structmap_is_value_read_cutoff_t is_value_read_cutoff);
+extern inline size_t
+structmap_modification_max_size_by_firstlevel_bits(unsigned int firstlevel_bits)
+{
+  //The modification nodes area will be allocated contiguously at once, so
+  //no need to include alignment in the multiplication.
+  return (structmap_modification_max_nodes_by_firstlevel_bits(firstlevel_bits) * sizeof(struct structmap_node)) + alignof(struct structmap_node) - 1;
+}
+
+extern inline size_t
+structmap_modification_max_size(const struct structmap *sm)
+{
+  return structmap_modification_max_size_by_firstlevel_bits(sm->firstlevel_bits);
+}
+
+void
+structmap_init(struct structmap                 *sm,
+               unsigned int                      firstlevel_bits,
+               structmap_value_size_t            sizeof_value,
+               structmap_is_value_read_cutoff_t  is_value_read_cutoff);
 
 extern inline void
 structmap_external_size_adjust(struct structmap *sm,
@@ -91,7 +119,7 @@ structmap_lookup(const struct cb        *cb,
                  uint64_t                key,
                  uint64_t               *value)
 {
-  const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+  const struct structmap_entry *entry = &(sm->entries[key & ((1 << sm->firstlevel_bits) - 1)]);
 
   if (entry->type == STRUCTMAP_ENTRY_ITEM
       && key == entry->item.key
@@ -124,7 +152,7 @@ structmap_insert(struct cb        **cb,
   assert(cb_offset_cmp(read_cutoff, write_cutoff) <= 0);
   assert(key > 0);
 
-  struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+  struct structmap_entry *entry = &(sm->entries[key & ((1 << sm->firstlevel_bits) - 1)]);
 
   if (entry->type == STRUCTMAP_ENTRY_EMPTY
       || (entry->type == STRUCTMAP_ENTRY_ITEM
@@ -178,7 +206,7 @@ structmap_would_collide_node_count(const struct cb        *cb,
                                    const struct structmap *sm,
                                    uint64_t                key)
 {
-  const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
+  const struct structmap_entry *entry = &(sm->entries[key & ((1 << sm->firstlevel_bits) - 1)]);
 
   if (entry->type == STRUCTMAP_ENTRY_EMPTY
       || (entry->type == STRUCTMAP_ENTRY_ITEM

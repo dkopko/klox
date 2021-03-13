@@ -472,7 +472,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  STRUCTMAP_MODIFICATION_SIZE));
+                                                  structmap_modification_max_size_by_firstlevel_bits(FIELDS_FIRSTLEVEL_BITS)));
 
   size_t size_before = structmap_size(&(instanceA.cp()->fields_sm));
   unsigned int nodes_before = structmap_node_count(&(instanceA.cp()->fields_sm));
@@ -500,7 +500,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
                                   (ssize_t)size_after - (ssize_t)size_before);
 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  - (ssize_t)STRUCTMAP_MODIFICATION_SIZE));
+                                                  - (ssize_t)structmap_modification_max_size_by_firstlevel_bits(FIELDS_FIRSTLEVEL_BITS)));
 
   //Account for future structmap enlargement on merge due to slot collisions.
   assert(nodes_after >= nodes_before);
@@ -552,7 +552,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  STRUCTMAP_MODIFICATION_SIZE));
+                                                  structmap_modification_max_size_by_firstlevel_bits(METHODS_FIRSTLEVEL_BITS)));
 
   size_t size_before = structmap_size(&(classA.cp()->methods_sm));
   size_t nodes_before = structmap_node_count(&(classA.cp()->methods_sm));
@@ -580,7 +580,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
                                   size_after - size_before);
 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  - (ssize_t)STRUCTMAP_MODIFICATION_SIZE));
+                                                  - (ssize_t)structmap_modification_max_size_by_firstlevel_bits(METHODS_FIRSTLEVEL_BITS)));
 
   //Account for future structmap enlargement on merge due to slot collisions.
   assert(nodes_after >= nodes_before);
@@ -598,7 +598,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
 }
 
 static int
-structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
+structmapTraversalMethodsAdd(uint64_t k, uint64_t v, void *closure)
 {
   struct structmap *dest_sm = (struct structmap *)closure;
   int ret;
@@ -610,7 +610,7 @@ structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  STRUCTMAP_MODIFICATION_SIZE));
+                                                  structmap_modification_max_size_by_firstlevel_bits(METHODS_FIRSTLEVEL_BITS)));
 
   size_t size_before = structmap_size(dest_sm);
 
@@ -628,7 +628,7 @@ structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
                                   (ssize_t)size_after - (ssize_t)size_before);
 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
-                                                  - (ssize_t)STRUCTMAP_MODIFICATION_SIZE));
+                                                  - (ssize_t)structmap_modification_max_size_by_firstlevel_bits(METHODS_FIRSTLEVEL_BITS)));
   return 0;
 }
 
@@ -657,7 +657,7 @@ static void classMethodsAddAll(OID<ObjClass> subclassOID, OID<ObjClass> supercla
   ret = structmap_traverse((const struct cb **)&thread_cb,
                            (found_in_a ? a_read_cutoff : found_in_b ? b_read_cutoff : c_read_cutoff),
                            &superclass_methods_sm_tmp,
-                           &structmapTraversalAdd,
+                           &structmapTraversalMethodsAdd,
                            &subclass_methods_sm_tmp);
   assert(ret == 0);
 

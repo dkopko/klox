@@ -279,7 +279,7 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 
 int
 objtablelayer_init(ObjTableLayer *layer) {
-  structmap_init(&(layer->sm), &klox_allocation_size, &objtable_is_value_read_cutoff);
+  structmap_init(&(layer->sm), OBJTABLELAYER_FIRSTLEVEL_BITS, &klox_allocation_size, &objtable_is_value_read_cutoff);
   return 0;
 }
 
@@ -335,13 +335,13 @@ objtablelayer_external_size_adjust(ObjTableLayer *layer,
 
 int
 methods_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm) {
-  structmap_init(sm, &klox_no_external_size2, &null_is_value_read_cutoff);
+  structmap_init(sm, METHODS_FIRSTLEVEL_BITS, &klox_no_external_size2, &null_is_value_read_cutoff);
   return 0;
 }
 
 int
 fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm) {
-  structmap_init(sm, &klox_no_external_size2, &null_is_value_read_cutoff);
+  structmap_init(sm, FIELDS_FIRSTLEVEL_BITS, &klox_no_external_size2, &null_is_value_read_cutoff);
   return 0;
 }
 
@@ -495,14 +495,15 @@ objtable_consolidation_size(ObjTable *obj_table)
   KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu\n",
          b_external_size, b_internal_size, c_external_size, c_internal_size);
   KLOX_TRACE("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu, addl_size: %zu\n",
-         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, STRUCTMAP_MODIFICATION_SIZE, addl_size);
+         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, structmap_modification_max_size(&(obj_table->a.sm)), addl_size);
 
   assert(b_layer_external_size <= (ssize_t)b_external_size);
   assert(b_layer_internal_size <= (ssize_t)b_internal_size);
   assert(c_layer_external_size == (ssize_t)c_external_size);
   assert(c_layer_internal_size == (ssize_t)c_internal_size);
 
-  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + STRUCTMAP_MODIFICATION_SIZE + addl_size;
+  //NOTE: All objtablelayer's structmaps must have the same number of firstlevel bits.
+  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + structmap_modification_max_size(&(obj_table->a.sm)) + addl_size;
 }
 
 cb_offset_t

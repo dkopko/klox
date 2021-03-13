@@ -4,11 +4,15 @@
 
 
 void
-structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, structmap_is_value_read_cutoff_t is_value_read_cutoff)
+structmap_init(struct structmap                 *sm,
+               unsigned int                      firstlevel_bits,
+               structmap_value_size_t            sizeof_value,
+               structmap_is_value_read_cutoff_t  is_value_read_cutoff)
 {
   sm->lowest_inserted_key = 0;
   sm->highest_inserted_key = 0;
   sm->root_node_offset = CB_NULL;
+  sm->firstlevel_bits = firstlevel_bits;
   sm->node_count = 0;
   sm->total_external_size = 0;
   sm->layer_mark_node_count = 0;
@@ -16,7 +20,7 @@ structmap_init(struct structmap *sm, structmap_value_size_t sizeof_value, struct
   sm->sizeof_value = sizeof_value;
   sm->is_value_read_cutoff = is_value_read_cutoff;
 
-  for (int i = 0; i < (1 << STRUCTMAP_FIRSTLEVEL_BITS); ++i) {
+  for (int i = 0; i < (1 << sm->firstlevel_bits); ++i) {
     sm->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
   }
 
@@ -56,10 +60,11 @@ structmap_node_alloc(struct cb        **cb,
 }
 
 static void
-ensure_structmap_modification_size(struct cb        **cb,
-                                   struct cb_region  *region)
+ensure_structmap_modification_size(const struct structmap  *sm,
+                                   struct cb              **cb,
+                                   struct cb_region        *region)
 {
-  int     nodes_left = STRUCTMAP_MODIFICATION_MAX_NODES;
+  int     nodes_left = structmap_modification_max_nodes(sm);
   ssize_t size_left_in_region = (ssize_t)(cb_region_end(region) - cb_region_cursor(region) - (alignof(struct structmap_node) - 1));
   int ret;
 
@@ -123,10 +128,10 @@ structmap_insert_slowpath(struct cb        **cb,
   // We do not want to have to re-sample pointers, so reserve the maximum amount
   // of space for the maximum amount of nodes we may need for this insertion so
   // that no CB resizes would happen.
-  ensure_structmap_modification_size(cb, region);
+  ensure_structmap_modification_size(sm, cb, region);
 
-  struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
-  unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
+  struct structmap_entry *entry = &(sm->entries[key & ((1 << sm->firstlevel_bits) - 1)]);
+  unsigned int key_route_base = sm->firstlevel_bits;
 
   while (true) {
     switch (entry->type) {
@@ -217,8 +222,8 @@ structmap_lookup_slowpath(const struct cb        *cb,
                           uint64_t                key,
                           uint64_t               *value)
 {
-  const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
-  unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
+  const struct structmap_entry *entry = &(sm->entries[key & ((1 << sm->firstlevel_bits) - 1)]);
+  unsigned int key_route_base = sm->firstlevel_bits;
 
   //FIXME consider cb_at_immed().
 
@@ -256,8 +261,8 @@ structmap_would_collide_node_count_slowpath(const struct cb        *cb,
 
   assert(key > 0);
 
-  const struct structmap_entry *entry = &(sm->entries[key & ((1 << STRUCTMAP_FIRSTLEVEL_BITS) - 1)]);
-  unsigned int key_route_base = STRUCTMAP_FIRSTLEVEL_BITS;
+  const struct structmap_entry *entry = &(sm->entries[key & ((1 << sm->firstlevel_bits) - 1)]);
+  unsigned int key_route_base = sm->firstlevel_bits;
 
   while (entry->type == STRUCTMAP_ENTRY_NODE) {
       if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return 0; }

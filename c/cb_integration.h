@@ -42,6 +42,11 @@ extern int exec_phase;
 extern int gc_phase;
 extern bool is_resizing;
 
+static const int OBJTABLELAYER_FIRSTLEVEL_BITS = 10;
+static const int FIELDS_FIRSTLEVEL_BITS = 0;
+static const int METHODS_FIRSTLEVEL_BITS = 0;
+
+
 #define CB_CACHE_LINE_SIZE 64
 #define CB_NULL ((cb_offset_t)0)
 
@@ -247,7 +252,8 @@ struct CBO
 typedef struct { uint64_t id; } ObjID;
 
 typedef struct ObjTableLayer {
-  struct structmap   sm;
+  struct structmap       sm;
+  struct structmap_entry _entries[(1 << OBJTABLELAYER_FIRSTLEVEL_BITS) - 1];
 } ObjTableLayer;
 
 typedef struct ObjTable {
