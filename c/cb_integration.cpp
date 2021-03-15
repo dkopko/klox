@@ -171,7 +171,7 @@ klox_Obj_external_size(const struct cb *cb,
     case OBJ_CLASS: {
       ObjClass *clazz = (ObjClass *)obj;
       return sizeof(ObjClass) + cb_alignof(ObjClass) - 1
-        + structmap_size(&(clazz->methods_sm))
+        + clazz->methods_sm.size()
         + alloc_header_size + alloc_header_align - 1;
     }
 
@@ -194,7 +194,7 @@ klox_Obj_external_size(const struct cb *cb,
     case OBJ_INSTANCE: {
       ObjInstance *instance = (ObjInstance *)obj;
       return sizeof(ObjInstance) + cb_alignof(ObjInstance) - 1
-             + structmap_size(&(instance->fields_sm))
+             + instance->fields_sm.size()
              + alloc_header_size + alloc_header_align - 1;
     }
 
@@ -279,7 +279,7 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 
 int
 objtablelayer_init(ObjTableLayer *layer) {
-  structmap_init(&(layer->sm), OBJTABLELAYER_FIRSTLEVEL_BITS, &klox_allocation_size, &objtable_is_value_read_cutoff);
+  layer->sm.init(&klox_allocation_size);
   return 0;
 }
 
@@ -301,9 +301,8 @@ objtablelayer_traverse(const struct cb                **cb,
   (void)ret;
 
   // Traverse the structmap entries.
-  ret = structmap_traverse(cb,
+  ret = layer->sm.traverse(cb,
                            read_cutoff,
-                           &(layer->sm),
                            (structmap_traverse_func_t)func,
                            closure);
   assert(ret == 0);
@@ -313,35 +312,35 @@ objtablelayer_traverse(const struct cb                **cb,
 
 size_t
 objtablelayer_external_size(ObjTableLayer *layer) {
-  return structmap_external_size(&(layer->sm));
+  return layer->sm.external_size();
 }
 
 size_t
 objtablelayer_internal_size(ObjTableLayer *layer) {
-  return structmap_internal_size(&(layer->sm));
+  return layer->sm.internal_size();
 }
 
 size_t
 objtablelayer_size(ObjTableLayer *layer) {
-  return structmap_size(&(layer->sm));
+  return layer->sm.size();
 }
 
 void
 objtablelayer_external_size_adjust(ObjTableLayer *layer,
                                    ssize_t        adjustment)
 {
-  structmap_external_size_adjust(&(layer->sm), adjustment);
+  layer->sm.external_size_adjust(adjustment);
 }
 
 int
-methods_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm) {
-  structmap_init(sm, METHODS_FIRSTLEVEL_BITS, &klox_no_external_size2, &null_is_value_read_cutoff);
+methods_layer_init(struct cb **cb, struct cb_region *region, MethodsSM *sm) {
+  sm->init(&klox_no_external_size2);
   return 0;
 }
 
 int
-fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm) {
-  structmap_init(sm, FIELDS_FIRSTLEVEL_BITS, &klox_no_external_size2, &null_is_value_read_cutoff);
+fields_layer_init(struct cb **cb, struct cb_region *region, FieldsSM *sm) {
+  sm->init(&klox_no_external_size2);
   return 0;
 }
 
@@ -364,19 +363,19 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
   int ret;
   (void)ret;
 
-  unsigned int pre_node_count = structmap_node_count(&(obj_table->a.sm));
+  unsigned int pre_node_count = obj_table->a.sm.node_count();
 
   ret = objtablelayer_insert(&thread_cb, &thread_region, a_read_cutoff, a_write_cutoff, &(obj_table->a), obj_id.id, offset);
   assert(ret == 0);
 
-  unsigned int post_node_count = structmap_node_count(&(obj_table->a.sm));
+  unsigned int post_node_count = obj_table->a.sm.node_count();
   assert(post_node_count >= pre_node_count);
 
   //Account for future structmap enlargement on merge due to slot collisions.
   unsigned int delta_node_count = post_node_count - pre_node_count;
   assert(post_node_count >= pre_node_count);
-  unsigned int b_collide_node_count = structmap_would_collide_node_count(thread_cb, b_read_cutoff, &(obj_table->b.sm), obj_id.id);
-  unsigned int c_collide_node_count = structmap_would_collide_node_count(thread_cb, c_read_cutoff, &(obj_table->c.sm), obj_id.id);
+  unsigned int b_collide_node_count = obj_table->b.sm.would_collide_node_count(thread_cb, b_read_cutoff, obj_id.id);
+  unsigned int c_collide_node_count = obj_table->c.sm.would_collide_node_count(thread_cb, c_read_cutoff, obj_id.id);
   unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count : c_collide_node_count);
   if (max_collide_node_count > delta_node_count) {
     unsigned int addl_node_count = max_collide_node_count - delta_node_count;
@@ -468,7 +467,7 @@ objtable_freeze(ObjTable *obj_table)
   //Although A will persistently represent the latest complete contents of B+C,
   //we will set the layer mark so that we can track only those new external
   //sizes and additional nodes as caused by subsequent mutations in A.
-  structmap_set_layer_mark(&(obj_table->a.sm));
+  obj_table->a.sm.set_layer_mark();
 
   //Track only new additional collision nodes.
   snap_addl_collision_nodes = addl_collision_nodes;
@@ -478,15 +477,15 @@ objtable_freeze(ObjTable *obj_table)
 size_t
 objtable_consolidation_size(ObjTable *obj_table)
 {
-  size_t b_external_size        = structmap_external_size(&(obj_table->b.sm));
-  size_t b_internal_size        = structmap_internal_size(&(obj_table->b.sm));
-  size_t c_external_size        = structmap_external_size(&(obj_table->c.sm));
-  size_t c_internal_size        = structmap_internal_size(&(obj_table->c.sm));
-  ssize_t b_layer_external_size = structmap_layer_external_size(&(obj_table->b.sm));
-  ssize_t b_layer_internal_size = structmap_layer_internal_size(&(obj_table->b.sm));
-  ssize_t c_layer_external_size = structmap_layer_external_size(&(obj_table->c.sm));
-  ssize_t c_layer_internal_size = structmap_layer_internal_size(&(obj_table->c.sm));
-  size_t addl_size = snap_addl_collision_nodes * (sizeof(struct structmap_node) + alignof(struct structmap_node) - 1);
+  size_t b_external_size        = obj_table->b.sm.external_size();
+  size_t b_internal_size        = obj_table->b.sm.internal_size();
+  size_t c_external_size        = obj_table->c.sm.external_size();
+  size_t c_internal_size        = obj_table->c.sm.internal_size();
+  ssize_t b_layer_external_size = obj_table->b.sm.layer_external_size();
+  ssize_t b_layer_internal_size = obj_table->b.sm.layer_internal_size();
+  ssize_t c_layer_external_size = obj_table->c.sm.layer_external_size();
+  ssize_t c_layer_internal_size = obj_table->c.sm.layer_internal_size();
+  size_t addl_size = snap_addl_collision_nodes * (sizeof(ObjTableSM::node) + alignof(ObjTableSM::node) - 1);
 
   (void)b_external_size, (void)b_internal_size, (void)c_external_size, (void)c_internal_size;
   (void)b_layer_external_size, (void)b_layer_internal_size, (void)c_layer_external_size, (void)c_layer_internal_size;
@@ -495,7 +494,7 @@ objtable_consolidation_size(ObjTable *obj_table)
   KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu\n",
          b_external_size, b_internal_size, c_external_size, c_internal_size);
   KLOX_TRACE("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu, addl_size: %zu\n",
-         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, structmap_modification_max_size(&(obj_table->a.sm)), addl_size);
+         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, ObjTableSM::MODIFICATION_MAX_SIZE, addl_size);
 
   assert(b_layer_external_size <= (ssize_t)b_external_size);
   assert(b_layer_internal_size <= (ssize_t)b_internal_size);
@@ -503,7 +502,7 @@ objtable_consolidation_size(ObjTable *obj_table)
   assert(c_layer_internal_size == (ssize_t)c_internal_size);
 
   //NOTE: All objtablelayer's structmaps must have the same number of firstlevel bits.
-  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + structmap_modification_max_size(&(obj_table->a.sm)) + addl_size;
+  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + ObjTableSM::MODIFICATION_MAX_SIZE + addl_size;
 }
 
 cb_offset_t
@@ -1005,10 +1004,10 @@ gc_deinit(void)
 struct merge_class_methods_closure
 {
   struct cb         *src_cb;
-  struct structmap  *b_class_methods_sm;
+  MethodsSM         *b_class_methods_sm;
   struct cb         *dest_cb;
   struct cb_region  *dest_region;
-  struct structmap  *dest_methods_sm;
+  MethodsSM         *dest_methods_sm;
   DEBUG_ONLY(size_t  last_sm_size);
 };
 
@@ -1024,21 +1023,20 @@ merge_c_class_methods(uint64_t  k,
 
   // The presence of an entry under this method name in the B class masks
   // our value, so no sense in copying it.
-  if (structmap_contains_key(cl->src_cb, b_read_cutoff, cl->b_class_methods_sm, k))
+  if (cl->b_class_methods_sm->contains_key(cl->src_cb, b_read_cutoff, k))
     return 0;
 
   DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
 
-  ret = structmap_insert(&(cl->dest_cb),
-                         cl->dest_region,
-                         cb_region_start(cl->dest_region),
-                         cb_region_start(cl->dest_region),
-                         cl->dest_methods_sm,
-                         k,
-                         v);
+  ret = cl->dest_methods_sm->insert(&(cl->dest_cb),
+                                    cl->dest_region,
+                                    cb_region_start(cl->dest_region),
+                                    cb_region_start(cl->dest_region),
+                                    k,
+                                    v);
   assert(ret == 0);
   DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
-  DEBUG_ONLY(size_t      sm_size = structmap_size(cl->dest_methods_sm));
+  DEBUG_ONLY(size_t      sm_size = cl->dest_methods_sm->size());
 
   // Actual bytes used must be <= structmap's self-considered growth.
   assert(c1 - c0 <= sm_size - cl->last_sm_size);
@@ -1050,10 +1048,10 @@ merge_c_class_methods(uint64_t  k,
 struct merge_instance_fields_closure
 {
   struct cb         *src_cb;
-  struct structmap  *b_instance_fields_sm;
+  FieldsSM          *b_instance_fields_sm;
   struct cb         *dest_cb;
   struct cb_region  *dest_region;
-  struct structmap  *dest_fields_sm;
+  FieldsSM          *dest_fields_sm;
   DEBUG_ONLY(size_t  last_sm_size);
 };
 
@@ -1069,21 +1067,20 @@ merge_c_instance_fields(uint64_t  k,
 
   // The presence of an entry under this method name in the B class masks
   // our value, so no sense in copying it.
-  if (structmap_contains_key(cl->src_cb, b_read_cutoff, cl->b_instance_fields_sm, k))
+  if (cl->b_instance_fields_sm->contains_key(cl->src_cb, b_read_cutoff, k))
     return 0;
 
   DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
 
-  ret = structmap_insert(&(cl->dest_cb),
-                         cl->dest_region,
-                         cb_region_start(cl->dest_region),
-                         cb_region_start(cl->dest_region),
-                         cl->dest_fields_sm,
-                         k,
-                         v);
+  ret = cl->dest_fields_sm->insert(&(cl->dest_cb),
+                                   cl->dest_region,
+                                   cb_region_start(cl->dest_region),
+                                   cb_region_start(cl->dest_region),
+                                   k,
+                                   v);
   assert(ret == 0);
   DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
-  DEBUG_ONLY(size_t      sm_size = structmap_size(cl->dest_fields_sm));
+  DEBUG_ONLY(size_t      sm_size = cl->dest_fields_sm->size());
 
   // Actual bytes used must be <= structmap's self-considered growth.
   assert(c1 - c0 <= sm_size - cl->last_sm_size);
@@ -1262,7 +1259,7 @@ copy_objtable_c_not_in_b(uint64_t  key,
       ObjClass *classB = (ObjClass *)bEntryObj.mlp().mp();  //cb-resize-safe (GC preallocated space)
       ObjClass *classC = (ObjClass *)cEntryObj.clp().cp();  //cb-resize-safe (GC preallocated space)
       struct merge_class_methods_closure subclosure;
-      size_t old_sm_size = structmap_size(&(classB->methods_sm));
+      size_t old_sm_size = classB->methods_sm.size();
       size_t new_sm_size;
 
       subclosure.src_cb              = cl->src_cb;
@@ -1270,16 +1267,15 @@ copy_objtable_c_not_in_b(uint64_t  key,
       subclosure.dest_cb             = cl->dest_cb;
       subclosure.dest_region         = cl->dest_region;
       subclosure.dest_methods_sm     = &(classB->methods_sm);
-      DEBUG_ONLY(subclosure.last_sm_size = structmap_size(&(classB->methods_sm)));
+      DEBUG_ONLY(subclosure.last_sm_size = classB->methods_sm.size());
 
-      ret = structmap_traverse((const struct cb **)&(cl->src_cb),
-                               c_read_cutoff,
-                               &(classC->methods_sm),
-                               merge_c_class_methods,
-                               &subclosure);
+      ret = classC->methods_sm.traverse((const struct cb **)&(cl->src_cb),
+                                        c_read_cutoff,
+                                        merge_c_class_methods,
+                                        &subclosure);
       assert(ret == 0);
 
-      new_sm_size = structmap_size(&(classB->methods_sm));
+      new_sm_size = classB->methods_sm.size();
 
       external_size_adjustment = (ssize_t)new_sm_size - (ssize_t)old_sm_size;
 
@@ -1292,7 +1288,7 @@ copy_objtable_c_not_in_b(uint64_t  key,
       ObjInstance *instanceB = (ObjInstance *)bEntryObj.mlp().mp();  //cb-resize-safe (GC preallocated space)
       ObjInstance *instanceC = (ObjInstance *)cEntryObj.clp().cp();  //cb-resize-safe (GC preallocated space)
       struct merge_instance_fields_closure subclosure;
-      size_t old_sm_size = structmap_size(&(instanceB->fields_sm));
+      size_t old_sm_size = instanceB->fields_sm.size();
       size_t new_sm_size;
 
       subclosure.src_cb                = cl->src_cb;
@@ -1300,16 +1296,15 @@ copy_objtable_c_not_in_b(uint64_t  key,
       subclosure.dest_cb               = cl->dest_cb;
       subclosure.dest_region           = cl->dest_region;
       subclosure.dest_fields_sm        = &(instanceB->fields_sm);
-      DEBUG_ONLY(subclosure.last_sm_size = structmap_size(&(instanceB->fields_sm)));
+      DEBUG_ONLY(subclosure.last_sm_size = instanceB->fields_sm.size());
 
-      ret = structmap_traverse((const struct cb **)&(cl->src_cb),
-                               c_read_cutoff,
-                               &(instanceC->fields_sm),
-                               merge_c_instance_fields,
-                               &subclosure);
+      ret = instanceC->fields_sm.traverse((const struct cb **)&(cl->src_cb),
+                                          c_read_cutoff,
+                                          merge_c_instance_fields,
+                                          &subclosure);
       assert(ret == 0);
 
-      new_sm_size = structmap_size(&(instanceB->fields_sm));
+      new_sm_size = instanceB->fields_sm.size();
 
       external_size_adjustment = (ssize_t)new_sm_size - (ssize_t)old_sm_size;
 

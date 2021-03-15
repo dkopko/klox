@@ -46,6 +46,15 @@ static const int OBJTABLELAYER_FIRSTLEVEL_BITS = 10;
 static const int FIELDS_FIRSTLEVEL_BITS = 0;
 static const int METHODS_FIRSTLEVEL_BITS = 0;
 
+//FIXME make these extern inline
+bool objtable_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v);
+bool null_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v);
+
+typedef structmap<10, 5, objtable_is_value_read_cutoff> ObjTableSM;
+typedef structmap<0, 5, null_is_value_read_cutoff> MethodsSM;
+typedef structmap<0, 5, null_is_value_read_cutoff> FieldsSM;
+
+
 
 #define CB_CACHE_LINE_SIZE 64
 #define CB_NULL ((cb_offset_t)0)
@@ -252,8 +261,7 @@ struct CBO
 typedef struct { uint64_t id; } ObjID;
 
 typedef struct ObjTableLayer {
-  struct structmap       sm;
-  struct structmap_entry _entries[(1 << OBJTABLELAYER_FIRSTLEVEL_BITS) - 1];
+  ObjTableSM sm;
 } ObjTableLayer;
 
 typedef struct ObjTable {
@@ -293,7 +301,7 @@ objtablelayer_insert(struct cb        **cb,
                      uint64_t           key,
                      uint64_t           value)
 {
-  return structmap_insert(cb, region, read_cutoff, write_cutoff, &(layer->sm), key, value);
+  return layer->sm.insert(cb, region, read_cutoff, write_cutoff, key, value);
 }
 
 extern inline bool
@@ -303,12 +311,12 @@ objtablelayer_lookup(const struct cb *cb,
                      uint64_t         key,
                      uint64_t        *value)
 {
-  return (structmap_lookup(cb, read_cutoff, &(layer->sm), key, value) && *value != CB_NULL);
+  return (layer->sm.lookup(cb, read_cutoff, key, value) && *value != CB_NULL);
 }
 
 
-int methods_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm);
-int fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm);
+int methods_layer_init(struct cb **cb, struct cb_region *region, MethodsSM *sm);
+int fields_layer_init(struct cb **cb, struct cb_region *region, FieldsSM *sm);
 
 void objtable_init(ObjTable *obj_table);
 void objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset);
@@ -458,12 +466,6 @@ klox_value_render(cb_offset_t           *dest_offset,
 size_t
 klox_value_no_external_size(const struct cb      *cb,
                             const struct cb_term *term);
-
-bool
-objtable_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v);
-
-bool
-null_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v);
 
 void
 klox_on_cb_resize(struct cb *old_cb, struct cb *new_cb);

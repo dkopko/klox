@@ -290,16 +290,27 @@ structmapTraversalGray(uint64_t k, uint64_t v, void *closure)
   return 0;
 }
 
-static void grayStructmap(const struct structmap *sm, cb_offset_t read_cutoff) {
+static void grayMethodsStructmap(const MethodsSM *sm, cb_offset_t read_cutoff) {
   int ret;
 
   (void)ret;
 
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           read_cutoff,
-                           sm,
-                           &structmapTraversalGray,
-                           NULL);
+  ret = sm->traverse((const struct cb **)&thread_cb,
+                     read_cutoff,
+                     &structmapTraversalGray,
+                     NULL);
+  assert(ret == 0);
+}
+
+static void grayFieldsStructmap(const FieldsSM *sm, cb_offset_t read_cutoff) {
+  int ret;
+
+  (void)ret;
+
+  ret = sm->traverse((const struct cb **)&thread_cb,
+                     read_cutoff,
+                     &structmapTraversalGray,
+                     NULL);
   assert(ret == 0);
 }
 
@@ -333,7 +344,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
       const ObjClass* klass = (const ObjClass*)object;
       grayObject(klass->name.id());
       grayObject(klass->superclass.id());
-      grayStructmap(&(klass->methods_sm), (found_in_b ? b_read_cutoff: c_read_cutoff));
+      grayMethodsStructmap(&(klass->methods_sm), (found_in_b ? b_read_cutoff: c_read_cutoff));
 
       //NOTE: Classes are represented by ObjClass layers.  The garbage
       // collector only deals with regions B and C.  If retrieval of the
@@ -343,7 +354,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
         const ObjClass* klass_C = (const ObjClass*)objectOID.clipC().cp();
         if (klass_C) {
           KLOX_TRACE("found backing class for #%ju\n", objectOID.id().id);
-          grayStructmap(&(klass_C->methods_sm), c_read_cutoff);
+          grayMethodsStructmap(&(klass_C->methods_sm), c_read_cutoff);
         }
       }
       break;
@@ -370,7 +381,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
     case OBJ_INSTANCE: {
       const ObjInstance* instance = (const ObjInstance*)object;
       grayObject(instance->klass.id());
-      grayStructmap(&(instance->fields_sm), (found_in_b ? b_read_cutoff : c_read_cutoff));
+      grayFieldsStructmap(&(instance->fields_sm), (found_in_b ? b_read_cutoff : c_read_cutoff));
 
       //NOTE: Instances are represented by ObjInstance layers.  The garbage
       // collector only deals with regions B and C.  If retrieval of the
@@ -380,7 +391,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
         const ObjInstance* instance_C = (const ObjInstance*)objectOID.clipC().cp();
         if (instance_C) {
           KLOX_TRACE("found backing instance for #%ju\n", objectOID.id().id);
-          grayStructmap(&(instance_C->fields_sm), c_read_cutoff);
+          grayFieldsStructmap(&(instance_C->fields_sm), c_read_cutoff);
         }
       }
       break;
@@ -453,8 +464,8 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
       dest->superclass  = src->superclass;
       dest->methods_sm  = src->methods_sm;
 
-      assert(structmap_external_size(&(dest->methods_sm)) == 0);
-      structmap_set_layer_mark(&(dest->methods_sm));
+      assert(dest->methods_sm.external_size() == 0);
+      dest->methods_sm.set_layer_mark();
 
       break;
     }
@@ -522,8 +533,8 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
       dest->klass      = src->klass;
       dest->fields_sm  = src->fields_sm;
 
-      assert(structmap_external_size(&(dest->fields_sm)) == 0);
-      structmap_set_layer_mark(&(dest->fields_sm));
+      assert(dest->fields_sm.external_size() == 0);
+      dest->fields_sm.set_layer_mark();
 
       break;
     }
@@ -616,35 +627,70 @@ copy_entry_to_bst(const struct cb_term *key_term,
   return 0;
 }
 
-struct copy_sm_entry_closure
+struct copy_MethodsSM_entry_closure
 {
   struct cb        **dest_cb;
   struct cb_region  *dest_region;
-  struct structmap  *dest_sm;
+  MethodsSM         *dest_sm;
   DEBUG_ONLY(size_t  last_sm_size);
 };
 
 static int
-copy_entry_to_sm(uint64_t k, uint64_t v, void *closure)
+copy_MethodsSM_entry(uint64_t k, uint64_t v, void *closure)
 {
-  struct copy_sm_entry_closure *cl = (struct copy_sm_entry_closure *)closure;
+  struct copy_MethodsSM_entry_closure *cl = (struct copy_MethodsSM_entry_closure *)closure;
   int ret;
 
   (void)ret;
 
   DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
 
-  ret = structmap_insert(cl->dest_cb,
-                         cl->dest_region,
-                         a_read_cutoff,
-                         a_write_cutoff,
-                         cl->dest_sm,
-                         k,
-                         v);
+  ret = cl->dest_sm->insert(cl->dest_cb,
+                            cl->dest_region,
+                            a_read_cutoff,
+                            a_write_cutoff,
+                            k,
+                            v);
   assert(ret == 0);
 
   DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
-  DEBUG_ONLY(size_t      sm_size = structmap_size(cl->dest_sm));
+  DEBUG_ONLY(size_t      sm_size = cl->dest_sm->size());
+
+  // Actual bytes used must be <= structmap's self-considered growth.
+  assert(c1 - c0 <= sm_size - cl->last_sm_size);
+  DEBUG_ONLY(cl->last_sm_size = sm_size);
+
+  return 0;
+}
+
+struct copy_FieldsSM_entry_closure
+{
+  struct cb        **dest_cb;
+  struct cb_region  *dest_region;
+  FieldsSM          *dest_sm;
+  DEBUG_ONLY(size_t  last_sm_size);
+};
+
+static int
+copy_FieldsSM_entry(uint64_t k, uint64_t v, void *closure)
+{
+  struct copy_FieldsSM_entry_closure *cl = (struct copy_FieldsSM_entry_closure *)closure;
+  int ret;
+
+  (void)ret;
+
+  DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
+
+  ret = cl->dest_sm->insert(cl->dest_cb,
+                            cl->dest_region,
+                            a_read_cutoff,
+                            a_write_cutoff,
+                            k,
+                            v);
+  assert(ret == 0);
+
+  DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
+  DEBUG_ONLY(size_t      sm_size = cl->dest_sm->size());
 
   // Actual bytes used must be <= structmap's self-considered growth.
   assert(c1 - c0 <= sm_size - cl->last_sm_size);
@@ -675,18 +721,17 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
     case OBJ_CLASS: {
       ObjClass *srcClass = (ObjClass *)srcCBO.crp(*cb).cp();  //cb-resize-safe (GC preallocated space)
       ObjClass *destClass = (ObjClass *)cloneCBO.crp(*cb).cp();  //cb-resize-safe (GC prealloated space)
-      struct copy_sm_entry_closure cl = {
+      struct copy_MethodsSM_entry_closure cl = {
         .dest_cb = cb,
         .dest_region = region,
         .dest_sm = &(destClass->methods_sm),
-        DEBUG_ONLY(cl.last_sm_size = structmap_size(&(destClass->methods_sm)))
+        DEBUG_ONLY(cl.last_sm_size = destClass->methods_sm.size())
       };
 
-      ret = structmap_traverse((const struct cb **)cb,
-                               read_cutoff,
-                               &(srcClass->methods_sm),
-                               copy_entry_to_sm,
-                               &cl);
+      ret = srcClass->methods_sm.traverse((const struct cb **)cb,
+                                          read_cutoff,
+                                          copy_MethodsSM_entry,
+                                          &cl);
       assert(ret == 0);
     }
     break;
@@ -694,18 +739,17 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
     case OBJ_INSTANCE: {
       ObjInstance *srcInstance = (ObjInstance *)srcCBO.crp(*cb).cp();  //cb-resize-safe (GC preallocated space)
       ObjInstance *destInstance = (ObjInstance *)cloneCBO.crp(*cb).cp();  //cb-resize-safe (GC preallocated space)
-      struct copy_sm_entry_closure cl = {
+      struct copy_FieldsSM_entry_closure cl = {
         .dest_cb = cb,
         .dest_region = region,
         .dest_sm = &(destInstance->fields_sm),
-        DEBUG_ONLY(cl.last_sm_size = structmap_size(&(destInstance->fields_sm)))
+        DEBUG_ONLY(cl.last_sm_size = destInstance->fields_sm.size())
       };
 
-      ret = structmap_traverse((const struct cb **)cb,
-                               read_cutoff,
-                               &(srcInstance->fields_sm),
-                               copy_entry_to_sm,
-                               &cl);
+      ret = srcInstance->fields_sm.traverse((const struct cb **)cb,
+                                            read_cutoff,
+                                            copy_FieldsSM_entry,
+                                            &cl);
       assert(ret == 0);
     }
     break;

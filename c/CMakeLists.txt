@@ -18,7 +18,6 @@ set(KLOX_SOURCES
   "${CMAKE_SOURCE_DIR}/memory.cpp"
   "${CMAKE_SOURCE_DIR}/object.cpp"
   "${CMAKE_SOURCE_DIR}/scanner.cpp"
-  "${CMAKE_SOURCE_DIR}/structmap.cpp"
   "${CMAKE_SOURCE_DIR}/table.cpp"
   "${CMAKE_SOURCE_DIR}/value.cpp"
   "${CMAKE_SOURCE_DIR}/vm.cpp"
