@@ -42,26 +42,32 @@ extern int exec_phase;
 extern int gc_phase;
 extern bool is_resizing;
 
-static const int OBJTABLELAYER_FIRSTLEVEL_BITS = 10;
-static const int FIELDS_FIRSTLEVEL_BITS = 0;
-static const int METHODS_FIRSTLEVEL_BITS = 0;
-
-//FIXME make these extern inline
-bool objtable_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v);
-bool null_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v);
-
-typedef structmap<10, 5, objtable_is_value_read_cutoff> ObjTableSM;
-typedef structmap<0, 5, null_is_value_read_cutoff> MethodsSM;
-typedef structmap<0, 5, null_is_value_read_cutoff> FieldsSM;
-
-
-
 #define CB_CACHE_LINE_SIZE 64
 #define CB_NULL ((cb_offset_t)0)
 
 #define ALREADY_WHITE_FLAG ((cb_offset_t)1)
 #define ALREADY_WHITE(OFFSET) !!((OFFSET) & ALREADY_WHITE_FLAG)
 #define PURE_OFFSET(OFFSET) ((OFFSET) & ~ALREADY_WHITE_FLAG)
+
+static const int OBJTABLELAYER_FIRSTLEVEL_BITS = 10;
+static const int FIELDS_FIRSTLEVEL_BITS = 0;
+static const int METHODS_FIRSTLEVEL_BITS = 0;
+
+extern inline bool
+objtable_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v)
+{
+  return PURE_OFFSET((cb_offset_t)v) != CB_NULL && cb_offset_cmp(PURE_OFFSET((cb_offset_t)v), read_cutoff) < 0;
+}
+
+extern inline bool
+null_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v)
+{
+  return false;
+}
+
+typedef structmap<10, 5, objtable_is_value_read_cutoff> ObjTableSM;
+typedef structmap<0, 5, null_is_value_read_cutoff> MethodsSM;
+typedef structmap<0, 5, null_is_value_read_cutoff> FieldsSM;
 
 #if NDEBUG
 #define DEBUG_ONLY(x)
