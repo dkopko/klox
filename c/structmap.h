@@ -23,20 +23,35 @@ typedef int (*structmap_traverse_func_t)(uint64_t key, uint64_t value, void *clo
 
 enum structmap_entry_type
 {
-  STRUCTMAP_ENTRY_EMPTY,
-  STRUCTMAP_ENTRY_ITEM,
-  STRUCTMAP_ENTRY_NODE
+  STRUCTMAP_ENTRY_EMPTY = 0x0,
+  STRUCTMAP_ENTRY_ITEM  = 0x1,
+  STRUCTMAP_ENTRY_NODE  = 0x2
 };
+
+static const unsigned int STRUCTMAP_TYPEMASK = 0x3;
+
 
 struct structmap_entry
 {
-  enum structmap_entry_type type;
-  union
-  {
-    struct { uint64_t key; uint64_t value; } item;
-    struct { uint64_t offset; } node;
-  };
+  uint64_t key_offset_and_type;
+  uint64_t value;
 };
+
+extern inline structmap_entry_type
+entrytypeof(const structmap_entry *entry) {
+  return static_cast<structmap_entry_type>(entry->key_offset_and_type & STRUCTMAP_TYPEMASK);
+}
+
+extern inline uint64_t
+entrykeyof(const structmap_entry *entry) {
+  return (entry->key_offset_and_type >> 2);
+}
+
+extern inline uint64_t
+entryoffsetof(const structmap_entry *entry) {
+  // Rely on alignment to have 2 LSB 0 bits for offsets.
+  return ((entry->key_offset_and_type >> 2) << 2);  //shift out the type tag
+}
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
 struct structmap
@@ -171,10 +186,10 @@ struct structmap
   {
     const struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
 
-    if (entry->type == STRUCTMAP_ENTRY_ITEM
-        && key == entry->item.key
-        && !CUTOFF(read_cutoff, entry->item.value)) {
-      *value = entry->item.value;
+    if (entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM
+        && key == entrykeyof(entry)
+        && !CUTOFF(read_cutoff, entry->value)) {
+      *value = entry->value;
       return true;
     }
 
@@ -194,12 +209,11 @@ struct structmap
 
     struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
 
-    if (entry->type == STRUCTMAP_ENTRY_EMPTY
-        || (entry->type == STRUCTMAP_ENTRY_ITEM
-            && (entry->item.key == key || CUTOFF(read_cutoff, entry->item.value)))) {
-      entry->type = STRUCTMAP_ENTRY_ITEM;
-      entry->item.key = key;
-      entry->item.value = value;
+    if (entrytypeof(entry) == STRUCTMAP_ENTRY_EMPTY
+        || (entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM
+            && (entrykeyof(entry) == key || CUTOFF(read_cutoff, entry->value)))) {
+      entry->key_offset_and_type = ((key << 2) | STRUCTMAP_ENTRY_ITEM);
+      entry->value = value;
       this->external_size_adjust((ssize_t)this->sizeof_value(*cb, value));
 
       if (this->lowest_inserted_key == 0 || key < this->lowest_inserted_key)
@@ -241,9 +255,9 @@ struct structmap
   {
     const struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
 
-    if (entry->type == STRUCTMAP_ENTRY_EMPTY
-        || (entry->type == STRUCTMAP_ENTRY_ITEM
-            && (entry->item.key == key || CUTOFF(read_cutoff, entry->item.value)))) {
+    if (entrytypeof(entry) == STRUCTMAP_ENTRY_EMPTY
+        || (entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM
+            && (entrykeyof(entry) == key || CUTOFF(read_cutoff, entry->value)))) {
       return 0;
     }
 
@@ -266,7 +280,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::init(structmap_value_size_t size
   this->sizeof_value = sizeof_value;
 
   for (int i = 0; i < (1 << FIRSTLEVEL_BITS); ++i) {
-    this->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
+    this->entries[i].key_offset_and_type = STRUCTMAP_ENTRY_EMPTY;
   }
 }
 
@@ -292,7 +306,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::node_alloc(struct cb        **cb
     {
       node *sn = (node *)cb_at(*cb, new_node_offset);
       for (int i = 0; i < (1 << LEVEL_BITS); ++i) {
-        sn->entries[i].type = STRUCTMAP_ENTRY_EMPTY;
+        sn->entries[i].key_offset_and_type = STRUCTMAP_ENTRY_EMPTY;
       }
     }
 
@@ -379,11 +393,10 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert_slowpath(struct cb       
   unsigned int key_route_base = FIRSTLEVEL_BITS;
 
   while (true) {
-    switch (entry->type) {
+    switch (entrytypeof(entry)) {
       case STRUCTMAP_ENTRY_EMPTY:
-        entry->type = STRUCTMAP_ENTRY_ITEM;
-        entry->item.key = key;
-        entry->item.value = value;
+        entry->key_offset_and_type = ((key << 2) | STRUCTMAP_ENTRY_ITEM);
+        entry->value = value;
         this->external_size_adjust((ssize_t)this->sizeof_value(*cb, value));
         goto exit_loop;
 
@@ -391,10 +404,10 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert_slowpath(struct cb       
         // Replace the value of the key, if the key is already present, or if
         // the mapping is considered below the read cutoff (having a value which
         // fulfills the 'is_value_read_cutoff' predicate.
-        if (entry->item.key == key || CUTOFF(read_cutoff, entry->item.value)) {
+        if (entrykeyof(entry) == key || CUTOFF(read_cutoff, entry->value)) {
           this->external_size_adjust((ssize_t)this->sizeof_value(*cb, value));
-          entry->item.key = key;
-          entry->item.value = value;
+          entry->key_offset_and_type = ((key << 2) | STRUCTMAP_ENTRY_ITEM);
+          entry->value = value;
           goto exit_loop;
         }
 
@@ -404,27 +417,27 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert_slowpath(struct cb       
         ret = this->node_alloc(cb, region, &child_node_offset);
         assert(ret == 0);
         node *child_node = (node *)cb_at(*cb, child_node_offset);
-        unsigned int child_route = (entry->item.key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
+        unsigned int child_route = (entrykeyof(entry) >> key_route_base) & ((1 << LEVEL_BITS) - 1);
         struct structmap_entry *child_entry = &(child_node->entries[child_route]);
-        child_entry->type = STRUCTMAP_ENTRY_ITEM;
-        child_entry->item.key = entry->item.key;
-        child_entry->item.value = entry->item.value;
+        child_entry->key_offset_and_type = ((entrykeyof(entry) << 2) | STRUCTMAP_ENTRY_ITEM);
+        child_entry->value = entry->value;
 
         // Make the old location of the key/value now point to the nested child node.
-        entry->type = STRUCTMAP_ENTRY_NODE;
-        entry->node.offset = child_node_offset;
+        entry->key_offset_and_type = (child_node_offset | STRUCTMAP_ENTRY_NODE);  // Rely on alignment to have 2 LSB 0 bits.
       }
       /* FALLTHROUGH to process addition of key/value to the new STRUCTMAP_ENTRY_NODE */
       /* fall through */
 
       case STRUCTMAP_ENTRY_NODE: {
         //Pretend entries which are actually below the read_cutoff do not exist.
-        if (cb_offset_cmp(entry->node.offset, read_cutoff) == -1) {
-          entry->type = STRUCTMAP_ENTRY_EMPTY;
+        if (cb_offset_cmp(entryoffsetof(entry), read_cutoff) == -1) {
+          entry->key_offset_and_type = STRUCTMAP_ENTRY_EMPTY;
           continue;
         }
-        this->select_modifiable_node(cb, region, write_cutoff, &(entry->node.offset));
-        node *child_node = (node *)cb_at(*cb, entry->node.offset);
+        cb_offset_t modifiable_node_offset = entryoffsetof(entry);
+        this->select_modifiable_node(cb, region, write_cutoff, &modifiable_node_offset);
+        entry->key_offset_and_type = (modifiable_node_offset | STRUCTMAP_ENTRY_NODE);  // Rely on alignment to have 2 LSB 0 bits.
+        node *child_node = (node *)cb_at(*cb, entryoffsetof(entry));
         unsigned int child_route = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
         entry = &(child_node->entries[child_route]);
         key_route_base += LEVEL_BITS;
@@ -433,7 +446,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert_slowpath(struct cb       
 
 #ifndef NDEBUG
       default:
-        printf("Bogus structmap entry type: %d\n", entry->type);
+        printf("Bogus structmap entry type: %d\n", entrytypeof(entry));
         assert(false);
         goto exit_loop;
 #endif
@@ -472,18 +485,18 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::lookup_slowpath(const struct cb 
 
   //FIXME consider cb_at_immed().
 
-  while (entry->type == STRUCTMAP_ENTRY_NODE) {
-      if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return false; }
-      const node *child_node = (node *)cb_at(cb, entry->node.offset);
+  while (entrytypeof(entry) == STRUCTMAP_ENTRY_NODE) {
+      if (entryoffsetof(entry) != CB_NULL && cb_offset_cmp(entryoffsetof(entry), read_cutoff) < 0) { return false; }
+      const node *child_node = (node *)cb_at(cb, entryoffsetof(entry));
       unsigned int child_route = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
       entry = &(child_node->entries[child_route]);
       key_route_base += LEVEL_BITS;
   }
 
-  if (entry->type == STRUCTMAP_ENTRY_ITEM
-      && key == entry->item.key
-      && !CUTOFF(read_cutoff, entry->item.value)) {
-    *value = entry->item.value;
+  if (entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM
+      && key == entrykeyof(entry)
+      && !CUTOFF(read_cutoff, entry->value)) {
+    *value = entry->value;
     return true;
   }
 
@@ -509,20 +522,20 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::would_collide_node_count_slowpat
   const struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
   unsigned int key_route_base = FIRSTLEVEL_BITS;
 
-  while (entry->type == STRUCTMAP_ENTRY_NODE) {
-      if (entry->node.offset != CB_NULL && cb_offset_cmp(entry->node.offset, read_cutoff) < 0) { return 0; }
-      const node *child_node = (node *)cb_at(cb, entry->node.offset);
+  while (entrytypeof(entry) == STRUCTMAP_ENTRY_NODE) {
+      if (entryoffsetof(entry) != CB_NULL && cb_offset_cmp(entryoffsetof(entry), read_cutoff) < 0) { return 0; }
+      const node *child_node = (node *)cb_at(cb, entryoffsetof(entry));
       unsigned int child_route = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
       entry = &(child_node->entries[child_route]);
       key_route_base += LEVEL_BITS;
   }
-  assert(entry->type == STRUCTMAP_ENTRY_EMPTY || entry->type == STRUCTMAP_ENTRY_ITEM);
+  assert(entrytypeof(entry) == STRUCTMAP_ENTRY_EMPTY || entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM);
 
-  if (entry->type == STRUCTMAP_ENTRY_EMPTY)
+  if (entrytypeof(entry) == STRUCTMAP_ENTRY_EMPTY)
     return 0;
 
-  assert(entry->type == STRUCTMAP_ENTRY_ITEM);
-  if (entry->item.key == key || CUTOFF(read_cutoff, entry->item.value)) {
+  assert(entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM);
+  if (entrykeyof(entry) == key || CUTOFF(read_cutoff, entry->value)) {
     // The key is already present, or the mapping is considered below the
     // read_cutoff (having a value which fulfills the 'is_value_read_cutoff'
     // predicate.  This is equivalent to a STRUCTMAP_ENTRY_EMPTY empty slot.
@@ -533,13 +546,13 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::would_collide_node_count_slowpat
   // out how many nodes would need to be created to reach the point of
   // slot independence for the existing key and the key being evaluated.
   unsigned int addl_nodes = 1;
-  unsigned int existing_key_child_slot = (entry->item.key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
+  unsigned int existing_key_child_slot = (entrykeyof(entry) >> key_route_base) & ((1 << LEVEL_BITS) - 1);
   unsigned int key_child_slot = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
 
   while (key_child_slot == existing_key_child_slot) {
     key_route_base += LEVEL_BITS;
     ++addl_nodes;
-    existing_key_child_slot = (entry->item.key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
+    existing_key_child_slot = (entrykeyof(entry) >> key_route_base) & ((1 << LEVEL_BITS) - 1);
     key_child_slot = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
   }
 
