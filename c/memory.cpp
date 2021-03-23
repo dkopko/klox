@@ -1073,6 +1073,7 @@ void collectGarbage() {
 
   cb_offset_t this_point_of_gc = cb_cursor(thread_cb);
   cb_offset_t new_lower_bound = this_point_of_gc;
+  KLOX_TRACE("cutoff adjustment a_write_cutoff %ju -> %ju\n", (uintmax_t)a_write_cutoff, (uintmax_t)new_lower_bound);
   a_write_cutoff = new_lower_bound;
 
   //NOTE: The loop here is to cover the exceedingly rare theoretical
@@ -1310,6 +1311,7 @@ void integrateGCResponse(struct gc_request_response *rr) {
   objtablelayer_init(&(thread_objtable.c));
   objtablelayer_assign(&(thread_objtable.b), &(rr->resp.objtable_new_b));
   thread_objtable_lower_bound = cb_region_start(&(rr->req.objtable_new_region));
+  KLOX_TRACE("cutoff adjustment a_read_cutoff %ju -> %ju\n", (uintmax_t)a_read_cutoff, (uintmax_t)rr->req.new_lower_bound);
   a_read_cutoff = rr->req.new_lower_bound;
   assert(thread_objtable.b.sm.root_node_offset == CB_NULL || thread_objtable.b.sm.root_node_offset >= rr->req.new_lower_bound);
   assert(thread_objtable.a.sm.root_node_offset == CB_NULL || thread_objtable.a.sm.root_node_offset >= rr->req.new_lower_bound);

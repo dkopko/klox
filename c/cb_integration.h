@@ -65,7 +65,7 @@ null_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v)
   return false;
 }
 
-typedef structmap<10, 5, objtable_is_value_read_cutoff> ObjTableSM;
+typedef structmap<0, 5, objtable_is_value_read_cutoff> ObjTableSM;
 typedef structmap<0, 5, null_is_value_read_cutoff> MethodsSM;
 typedef structmap<0, 5, null_is_value_read_cutoff> FieldsSM;
 

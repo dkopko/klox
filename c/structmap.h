@@ -21,6 +21,9 @@ typedef size_t (*structmap_value_size_t)(const struct cb *cb, uint64_t v);
 typedef bool (*structmap_is_value_read_cutoff_t)(cb_offset_t read_cutoff, uint64_t v);
 typedef int (*structmap_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
 
+
+#if 0
+//BACKED OUT SLOW IMPLEMENTATION
 enum structmap_entry_type
 {
   STRUCTMAP_ENTRY_EMPTY = 0x0,
@@ -29,7 +32,6 @@ enum structmap_entry_type
 };
 
 static const unsigned int STRUCTMAP_TYPEMASK = 0x3;
-
 
 struct structmap_entry
 {
@@ -52,24 +54,38 @@ entryoffsetof(const structmap_entry *entry) {
   // Rely on alignment to have 2 LSB 0 bits for offsets.
   return ((entry->key_offset_and_type >> 2) << 2);  //shift out the type tag
 }
+#endif
+
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
 struct structmap
 {
+  struct firstlevel_entry
+  {
+    uint64_t     enclosed_mask;
+    int          shl;
+    unsigned int height;
+    uint64_t     child;
+  };
+
+  //uint64_t               enclosed_mask;
+  //int                    shl;
   uint64_t               lowest_inserted_key;
   uint64_t               highest_inserted_key;
-  cb_offset_t            root_node_offset; //FIXME remove, no longer used
-  unsigned int           firstlevel_bits;
+  cb_offset_t            root_node_offset;
   unsigned int           node_count_;
   size_t                 total_external_size;
+  //unsigned int           height;
   unsigned int           layer_mark_node_count;
   size_t                 layer_mark_external_size;
   structmap_value_size_t sizeof_value;
-  struct structmap_entry entries[1 << FIRSTLEVEL_BITS];
+  //struct structmap_entry entries[1 << FIRSTLEVEL_BITS];
+  firstlevel_entry       children[1 << FIRSTLEVEL_BITS];
 
   struct node
   {
-      struct structmap_entry entries[1 << LEVEL_BITS];
+      //struct structmap_entry entries[1 << LEVEL_BITS];
+      uint64_t children[1 << LEVEL_BITS];
   };
 
   // The maximum amount structmap_nodes we may need for a modification (insertion)
@@ -85,24 +101,23 @@ struct structmap
              struct cb_region  *region,
              cb_offset_t       *node_offset);
 
-  void
+  static void
   ensure_modification_size(struct cb        **cb,
                            struct cb_region  *region);
 
   int
   select_modifiable_node(struct cb        **cb,
                          struct cb_region  *region,
+                         cb_offset_t        read_cutoff,
                          cb_offset_t        write_cutoff,
                          cb_offset_t       *node_offset);
 
-  int
-  insert_slowpath(struct cb        **cb,
-                  struct cb_region  *region,
-                  cb_offset_t        read_cutoff,
-                  cb_offset_t        write_cutoff,
-                  uint64_t           key,
-                  uint64_t           value);
+  void
+  heighten(struct cb        **cb,
+           struct cb_region  *region,
+           firstlevel_entry  *entry);
 
+#if 0
   bool
   lookup_slowpath(const struct cb *cb,
                   cb_offset_t      read_cutoff,
@@ -113,6 +128,7 @@ struct structmap
   would_collide_node_count_slowpath(const struct cb *cb,
                                     cb_offset_t      read_cutoff,
                                     uint64_t         key) const;
+#endif
 
   int
   traverse(const struct cb           **cb,
@@ -184,6 +200,59 @@ struct structmap
          uint64_t         key,
          uint64_t        *value) const
   {
+    const firstlevel_entry *entry = &(this->children[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
+// FIXME  key >>= FIRSTLEVEL_BITS;
+    if ((key & entry->enclosed_mask) != key)
+      return false;
+
+    node *n;
+    uint64_t child = entry->child;
+    int path;
+
+    for (int shl = entry->shl; shl; shl -= LEVEL_BITS) {
+      if (CUTOFF(read_cutoff, child)) { return false; }
+      n = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
+      path = (key >> shl) & (((uint64_t)1 << LEVEL_BITS) - 1);
+      child = n->children[path];
+      if (child == 1) { return false; }
+    }
+    if (CUTOFF(read_cutoff, child)) { return false; }
+    n = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
+    path = key & (((uint64_t)1 << LEVEL_BITS) - 1);
+    uint64_t tmpval = n->children[path];
+    if (tmpval == 1 || CUTOFF(read_cutoff, tmpval)) { return false; }
+
+    *value = tmpval;
+
+    return true;
+
+#if 0
+    //OLD PERFORMANT IMPLEMENTATION
+    if ((key & sm->enclosed_mask) != key)
+      return false;
+
+    struct structmap_node *n;
+    uint64_t child = sm->root_node_offset;
+    int path;
+
+    for (int shl = sm->shl; shl; shl -= STRUCTMAP_LEVEL_BITS) {
+      n = (struct structmap_node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
+      path = (key >> shl) & (((uint64_t)1 << STRUCTMAP_LEVEL_BITS) - 1);
+      child = n->children[path];
+      if (child == 1) { return false; }
+    }
+    n = (struct structmap_node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
+    path = key & (((uint64_t)1 << STRUCTMAP_LEVEL_BITS) - 1);
+    uint64_t tmpval = n->children[path];
+    if (tmpval == 1) { return false; }
+
+    *value = tmpval;
+
+    return true;
+#endif
+
+#if 0
+    //BACKED OUT NEW IMPLEMENTATION
     const struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
 
     if (entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM
@@ -194,6 +263,7 @@ struct structmap
     }
 
     return this->lookup_slowpath(cb, read_cutoff, key, value);
+#endif
   }
 
   int
@@ -202,42 +272,7 @@ struct structmap
          cb_offset_t        read_cutoff,
          cb_offset_t        write_cutoff,
          uint64_t           key,
-         uint64_t           value)
-  {
-    assert(cb_offset_cmp(read_cutoff, write_cutoff) <= 0);
-    assert(key > 0);
-
-    struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
-
-    if (entrytypeof(entry) == STRUCTMAP_ENTRY_EMPTY
-        || (entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM
-            && (entrykeyof(entry) == key || CUTOFF(read_cutoff, entry->value)))) {
-      entry->key_offset_and_type = ((key << 2) | STRUCTMAP_ENTRY_ITEM);
-      entry->value = value;
-      this->external_size_adjust((ssize_t)this->sizeof_value(*cb, value));
-
-      if (this->lowest_inserted_key == 0 || key < this->lowest_inserted_key)
-        this->lowest_inserted_key = key;
-
-      if (key > this->highest_inserted_key)
-        this->highest_inserted_key = key;
-
-#ifndef NDEBUG
-      {
-        uint64_t test_v;
-        bool lookup_success = this->lookup(*cb, write_cutoff, key, &test_v);
-        //printf("lookup_success? %d, same? %d:  #%ju -> @%ju\n", lookup_success, test_v == value, (uintmax_t)key, (uintmax_t)value);
-        assert(lookup_success);
-        assert(test_v == value);
-      }
-#endif
-
-      return 0;
-    }
-
-    return insert_slowpath(cb, region, read_cutoff, write_cutoff, key, value);
-  }
-
+         uint64_t           value);
 
   bool
   contains_key(const struct cb *cb,
@@ -248,6 +283,7 @@ struct structmap
     return lookup(cb, read_cutoff, key, &v);
   }
 
+#if 0
   unsigned int
   would_collide_node_count(const struct cb        *cb,
                            cb_offset_t             read_cutoff,
@@ -263,24 +299,31 @@ struct structmap
 
     return this->would_collide_node_count_slowpath(cb, read_cutoff, key);
   }
+#endif
+
 };
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
 void
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::init(structmap_value_size_t sizeof_value)
 {
+  //this->enclosed_mask = 0;
+  //this->shl = 0;
   this->lowest_inserted_key = 0;
   this->highest_inserted_key = 0;
   this->root_node_offset = CB_NULL;
-  this->firstlevel_bits = firstlevel_bits;
   this->node_count_ = 0;
   this->total_external_size = 0;
+  //this->height = 0;
   this->layer_mark_node_count = 0;
   this->layer_mark_external_size = 0;
   this->sizeof_value = sizeof_value;
 
   for (int i = 0; i < (1 << FIRSTLEVEL_BITS); ++i) {
-    this->entries[i].key_offset_and_type = STRUCTMAP_ENTRY_EMPTY;
+    this->children[i].enclosed_mask = 0;
+    this->children[i].shl = 0;
+    this->children[i].height = 0;
+    this->children[i].child = 1;
   }
 }
 
@@ -298,7 +341,8 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::node_alloc(struct cb        **cb
                              &new_node_offset,
                              cb_alignof(node),
                              sizeof(node));
-    if (ret != CB_SUCCESS) { printf("DANDEBUGwtf4\n"); abort(); }
+    //if (ret != CB_SUCCESS) { printf("DANDEBUGwtf4\n"); abort(); }
+    assert(ret == CB_SUCCESS);
     if (ret != CB_SUCCESS)
         return ret;
 
@@ -306,7 +350,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::node_alloc(struct cb        **cb
     {
       node *sn = (node *)cb_at(*cb, new_node_offset);
       for (int i = 0; i < (1 << LEVEL_BITS); ++i) {
-        sn->entries[i].key_offset_and_type = STRUCTMAP_ENTRY_EMPTY;
+        sn->children[i] = 1;
       }
     }
 
@@ -322,9 +366,11 @@ void
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::ensure_modification_size(struct cb        **cb,
                                                                          struct cb_region  *region)
 {
-  int     nodes_left = this->MODIFICATION_MAX_NODES;
+  int     nodes_left = MODIFICATION_MAX_NODES;
   ssize_t size_left_in_region = (ssize_t)(cb_region_end(region) - cb_region_cursor(region) - (alignof(node) - 1));
   int ret;
+
+  (void)ret;
 
   //First, check whether we have enough size in this region alone.
   if (size_left_in_region > 0) {
@@ -339,7 +385,8 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::ensure_modification_size(struct 
   cb_offset_t      offset_tmp;
 
   ret = cb_region_memalign(cb, &region_tmp, &offset_tmp, alignof(node), nodes_left * sizeof(node));
-  if (ret != CB_SUCCESS) { printf("DANDEBUGwtf5\n"); abort(); }
+  assert(ret == CB_SUCCESS);
+  //if (ret != CB_SUCCESS) { printf("DANDEBUGwtf5\n"); abort(); }
   cb_rewind_to(*cb, cursor);
 }
 
@@ -347,6 +394,7 @@ template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_val
 int
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::select_modifiable_node(struct cb        **cb,
                                                                        struct cb_region  *region,
+                                                                       cb_offset_t        read_cutoff,
                                                                        cb_offset_t        write_cutoff,
                                                                        cb_offset_t       *node_offset)
 {
@@ -357,6 +405,12 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::select_modifiable_node(struct cb
   if (cb_offset_cmp(write_cutoff, *node_offset) <= 0)
     return 0;
 
+  if (CUTOFF(read_cutoff, *node_offset)) {
+    ret = this->node_alloc(cb, region, node_offset);
+    assert(ret == 0);
+    return 0;
+  }
+
   node *old_node = (node *)cb_at(*cb, *node_offset);
 
   ret = this->node_alloc(cb, region, node_offset);
@@ -364,19 +418,102 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::select_modifiable_node(struct cb
 
   node *new_node = (node *)cb_at(*cb, *node_offset);
   memcpy(new_node, old_node, sizeof(*old_node));
-  return 0;
+  return 0;  //FIXME just return new_node?
 }
 
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
-int
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert_slowpath(struct cb        **cb,
-                                                                struct cb_region  *region,
-                                                                cb_offset_t        read_cutoff,
-                                                                cb_offset_t        write_cutoff,
-                                                                uint64_t           key,
-                                                                uint64_t           value)
+void
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::heighten(struct cb        **cb,
+                                                         struct cb_region  *region,
+                                                         firstlevel_entry  *entry)
 {
+  cb_offset_t new_node_offset;
+  int ret;
+
+  (void) ret;
+
+  ret = node_alloc(cb, region, &new_node_offset);
+  assert(ret == 0);
+
+  node *new_root_node = (node *)cb_at(*cb, new_node_offset);
+  new_root_node->children[0] = entry->child;
+
+  entry->child = new_node_offset;
+  if (entry->enclosed_mask) { entry->shl += LEVEL_BITS; }
+  entry->enclosed_mask = (entry->enclosed_mask << LEVEL_BITS) | (((uint64_t)1 << LEVEL_BITS) - 1);
+  ++(entry->height);
+  //KLOX_TRACE("DANDEBUG heightened structmap %p to new height %u, new enclosed_mask: %jx\n", sm, sm->height, (uintmax_t)sm->enclosed_mask);
+}
+
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+int
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
+                                                       struct cb_region  *region,
+                                                       cb_offset_t        read_cutoff,
+                                                       cb_offset_t        write_cutoff,
+                                                       uint64_t           key,
+                                                       uint64_t           value)
+{
+  int ret;
+
+  (void)ret;
+
+  assert(key > 0);
+
+  // We do not want to have to re-sample pointers, so reserve the maximum amount
+  // of space for the maximum amount of nodes we may need for this insertion so
+  // that no CB resizes would happen.
+  ensure_modification_size(cb, region);
+
+  // Heighten structmap until it encloses this key.
+  firstlevel_entry *entry = &(this->children[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
+// FIXME  key >>= FIRSTLEVEL_BITS;
+  while ((key & entry->enclosed_mask) != key) {
+    heighten(cb, region, entry);
+  }
+
+  select_modifiable_node(cb, region, read_cutoff, write_cutoff, &(entry->child));
+  node *n = (node *)cb_at(*cb, entry->child);
+  for (int shl = entry->shl; shl; shl -= LEVEL_BITS) {
+    int path = (key >> shl) & (((uint64_t)1 << LEVEL_BITS) - 1);
+    cb_offset_t *child_offset = &(n->children[path]);
+    assert(*child_offset != 0);
+
+    if (*child_offset == 1) {
+      ret = node_alloc(cb, region, child_offset);
+      assert(ret == 0);
+    }
+
+    select_modifiable_node(cb, region, read_cutoff, write_cutoff, child_offset);
+    n = (node *)cb_at(*cb, *child_offset);
+  }
+  int finalpath = key & (((uint64_t)1 << LEVEL_BITS) - 1);
+  uint64_t old_value = n->children[finalpath];
+  n->children[finalpath] = value;
+
+  external_size_adjust((ssize_t)this->sizeof_value(*cb, value) - (old_value == 1 ? 0 : (ssize_t)this->sizeof_value(*cb, old_value)));
+
+  if (this->lowest_inserted_key == 0 || key < this->lowest_inserted_key)
+    this->lowest_inserted_key = key;
+
+  if (key > this->highest_inserted_key)
+    this->highest_inserted_key = key;
+
+#ifndef NDEBUG
+  {
+    uint64_t test_v;
+    bool lookup_success = lookup(*cb, read_cutoff, key, &test_v);
+    assert(lookup_success);
+    assert(test_v == value);
+  }
+#endif
+
+  return 0;
+
+
+#if 0
+  //BACKED OUT SLOW IMPLEMENTATION
   int ret;
 
   (void)ret;
@@ -471,8 +608,10 @@ exit_loop:
 #endif
 
   return 0;
+#endif
 }
 
+#if 0
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
 bool
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::lookup_slowpath(const struct cb *cb,
@@ -502,6 +641,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::lookup_slowpath(const struct cb 
 
   return false;
 }
+
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
 unsigned int
@@ -558,6 +698,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::would_collide_node_count_slowpat
 
   return addl_nodes;
 }
+#endif
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
 int

@@ -351,11 +351,14 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
   int ret;
   (void)ret;
 
+#if 0
   unsigned int pre_node_count = obj_table->a.sm.node_count();
+#endif
 
   ret = objtablelayer_insert(&thread_cb, &thread_region, a_read_cutoff, a_write_cutoff, &(obj_table->a), obj_id.id, offset);
   assert(ret == 0);
 
+#if 0
   unsigned int post_node_count = obj_table->a.sm.node_count();
   assert(post_node_count >= pre_node_count);
 
@@ -370,6 +373,7 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
     KLOX_TRACE("Need addl_nodes (objtable): %ju\n", (uintmax_t)addl_node_count);
     addl_collision_nodes += addl_node_count;
   }
+#endif
 }
 
 ObjID
@@ -447,9 +451,11 @@ objtable_freeze(ObjTable *obj_table)
 {
   //assert(num_entries(obj_table->c) == 0); //FIXME create this check
   obj_table->c = obj_table->b;
+  KLOX_TRACE("cutoff adjustment c_read_cutoff %ju -> %ju\n", (uintmax_t)c_read_cutoff, (uintmax_t)b_read_cutoff);
   c_read_cutoff = b_read_cutoff;
 
   obj_table->b = obj_table->a;
+  KLOX_TRACE("cutoff adjustment b_read_cutoff %ju -> %ju\n", (uintmax_t)b_read_cutoff, (uintmax_t)a_read_cutoff);
   b_read_cutoff = a_read_cutoff;
 
   //Although A will persistently represent the latest complete contents of B+C,
