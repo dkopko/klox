@@ -201,8 +201,9 @@ struct structmap
          uint64_t        *value) const
   {
     const firstlevel_entry *entry = &(this->children[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
-// FIXME  key >>= FIRSTLEVEL_BITS;
-    if ((key & entry->enclosed_mask) != key)
+    key >>= FIRSTLEVEL_BITS;
+
+    if ((key & entry->enclosed_mask) != key || !entry->enclosed_mask)
       return false;
 
     node *n;
@@ -455,6 +456,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
                                                        uint64_t           key,
                                                        uint64_t           value)
 {
+  uint64_t orig_key = key;
   int ret;
 
   (void)ret;
@@ -468,8 +470,9 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
 
   // Heighten structmap until it encloses this key.
   firstlevel_entry *entry = &(this->children[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
-// FIXME  key >>= FIRSTLEVEL_BITS;
-  while ((key & entry->enclosed_mask) != key) {
+  key >>= FIRSTLEVEL_BITS;
+
+  while ((key & entry->enclosed_mask) != key || !entry->enclosed_mask) {
     heighten(cb, region, entry);
   }
 
@@ -494,16 +497,16 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
 
   external_size_adjust((ssize_t)this->sizeof_value(*cb, value) - (old_value == 1 ? 0 : (ssize_t)this->sizeof_value(*cb, old_value)));
 
-  if (this->lowest_inserted_key == 0 || key < this->lowest_inserted_key)
-    this->lowest_inserted_key = key;
+  if (this->lowest_inserted_key == 0 || orig_key < this->lowest_inserted_key)
+    this->lowest_inserted_key = orig_key;
 
-  if (key > this->highest_inserted_key)
-    this->highest_inserted_key = key;
+  if (orig_key > this->highest_inserted_key)
+    this->highest_inserted_key = orig_key;
 
 #ifndef NDEBUG
   {
     uint64_t test_v;
-    bool lookup_success = lookup(*cb, read_cutoff, key, &test_v);
+    bool lookup_success = lookup(*cb, read_cutoff, orig_key, &test_v);
     assert(lookup_success);
     assert(test_v == value);
   }
