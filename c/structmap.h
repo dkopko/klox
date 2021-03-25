@@ -132,7 +132,6 @@ struct structmap
 
   int
   traverse(const struct cb           **cb,
-           cb_offset_t                 read_cutoff,
            structmap_traverse_func_t   func,
            void                       *closure) const;
 
@@ -196,7 +195,6 @@ struct structmap
 
   bool
   lookup(const struct cb *cb,
-         cb_offset_t      read_cutoff,
          uint64_t         key,
          uint64_t        *value) const
   {
@@ -211,17 +209,15 @@ struct structmap
     int path;
 
     for (int shl = entry->shl; shl; shl -= LEVEL_BITS) {
-      if (CUTOFF(read_cutoff, child)) { return false; }
       n = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
       path = (key >> shl) & (((uint64_t)1 << LEVEL_BITS) - 1);
       child = n->children[path];
       if (child == 1) { return false; }
     }
-    if (CUTOFF(read_cutoff, child)) { return false; }
     n = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
     path = key & (((uint64_t)1 << LEVEL_BITS) - 1);
     uint64_t tmpval = n->children[path];
-    if (tmpval == 1 || CUTOFF(read_cutoff, tmpval)) { return false; }
+    if (tmpval == 1) { return false; }
 
     *value = tmpval;
 
@@ -270,18 +266,15 @@ struct structmap
   int
   insert(struct cb        **cb,
          struct cb_region  *region,
-         cb_offset_t        read_cutoff,
-         cb_offset_t        write_cutoff,
          uint64_t           key,
          uint64_t           value);
 
   bool
   contains_key(const struct cb *cb,
-               cb_offset_t      read_cutoff,
                uint64_t         key) const
   {
     uint64_t v;
-    return lookup(cb, read_cutoff, key, &v);
+    return lookup(cb, key, &v);
   }
 
 #if 0
@@ -451,8 +444,6 @@ template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_val
 int
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
                                                        struct cb_region  *region,
-                                                       cb_offset_t        read_cutoff,
-                                                       cb_offset_t        write_cutoff,
                                                        uint64_t           key,
                                                        uint64_t           value)
 {
@@ -476,7 +467,6 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
     heighten(cb, region, entry);
   }
 
-  select_modifiable_node(cb, region, read_cutoff, write_cutoff, &(entry->child));
   node *n = (node *)cb_at(*cb, entry->child);
   for (int shl = entry->shl; shl; shl -= LEVEL_BITS) {
     int path = (key >> shl) & (((uint64_t)1 << LEVEL_BITS) - 1);
@@ -488,7 +478,6 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
       assert(ret == 0);
     }
 
-    select_modifiable_node(cb, region, read_cutoff, write_cutoff, child_offset);
     n = (node *)cb_at(*cb, *child_offset);
   }
   int finalpath = key & (((uint64_t)1 << LEVEL_BITS) - 1);
@@ -506,7 +495,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
 #ifndef NDEBUG
   {
     uint64_t test_v;
-    bool lookup_success = lookup(*cb, read_cutoff, orig_key, &test_v);
+    bool lookup_success = lookup(*cb, orig_key, &test_v);
     assert(lookup_success);
     assert(test_v == value);
   }
@@ -706,7 +695,6 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::would_collide_node_count_slowpat
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
 int
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::traverse(const struct cb           **cb,
-                                                         cb_offset_t                 read_cutoff,
                                                          structmap_traverse_func_t   func,
                                                          void                       *closure) const
 {
@@ -718,7 +706,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::traverse(const struct cb        
        k > 0 && k <= e;
        ++k)
   {
-    bool lookup_success = this->lookup(*cb, read_cutoff, k, &v);
+    bool lookup_success = this->lookup(*cb, k, &v);
     if (lookup_success) {
       func(k, v, closure);
     }

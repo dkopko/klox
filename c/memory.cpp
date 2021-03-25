@@ -290,25 +290,23 @@ structmapTraversalGray(uint64_t k, uint64_t v, void *closure)
   return 0;
 }
 
-static void grayMethodsStructmap(const MethodsSM *sm, cb_offset_t read_cutoff) {
+static void grayMethodsStructmap(const MethodsSM *sm) {
   int ret;
 
   (void)ret;
 
   ret = sm->traverse((const struct cb **)&thread_cb,
-                     read_cutoff,
                      &structmapTraversalGray,
                      NULL);
   assert(ret == 0);
 }
 
-static void grayFieldsStructmap(const FieldsSM *sm, cb_offset_t read_cutoff) {
+static void grayFieldsStructmap(const FieldsSM *sm) {
   int ret;
 
   (void)ret;
 
   ret = sm->traverse((const struct cb **)&thread_cb,
-                     read_cutoff,
                      &structmapTraversalGray,
                      NULL);
   assert(ret == 0);
@@ -344,7 +342,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
       const ObjClass* klass = (const ObjClass*)object;
       grayObject(klass->name.id());
       grayObject(klass->superclass.id());
-      grayMethodsStructmap(&(klass->methods_sm), (found_in_b ? b_read_cutoff: c_read_cutoff));
+      grayMethodsStructmap(&(klass->methods_sm));
 
       //NOTE: Classes are represented by ObjClass layers.  The garbage
       // collector only deals with regions B and C.  If retrieval of the
@@ -354,7 +352,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
         const ObjClass* klass_C = (const ObjClass*)objectOID.clipC().cp();
         if (klass_C) {
           KLOX_TRACE("found backing class for #%ju\n", objectOID.id().id);
-          grayMethodsStructmap(&(klass_C->methods_sm), c_read_cutoff);
+          grayMethodsStructmap(&(klass_C->methods_sm));
         }
       }
       break;
@@ -381,7 +379,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
     case OBJ_INSTANCE: {
       const ObjInstance* instance = (const ObjInstance*)object;
       grayObject(instance->klass.id());
-      grayFieldsStructmap(&(instance->fields_sm), (found_in_b ? b_read_cutoff : c_read_cutoff));
+      grayFieldsStructmap(&(instance->fields_sm));
 
       //NOTE: Instances are represented by ObjInstance layers.  The garbage
       // collector only deals with regions B and C.  If retrieval of the
@@ -391,7 +389,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
         const ObjInstance* instance_C = (const ObjInstance*)objectOID.clipC().cp();
         if (instance_C) {
           KLOX_TRACE("found backing instance for #%ju\n", objectOID.id().id);
-          grayFieldsStructmap(&(instance_C->fields_sm), c_read_cutoff);
+          grayFieldsStructmap(&(instance_C->fields_sm));
         }
       }
       break;
@@ -462,10 +460,9 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
       dest->obj         = src->obj;
       dest->name        = src->name;
       dest->superclass  = src->superclass;
-      dest->methods_sm  = src->methods_sm;
-
-      assert(dest->methods_sm.external_size() == 0);
-      dest->methods_sm.set_layer_mark();
+      //NOTE: We expect lookup of methods to first check this new, mutable,
+      //  A-region ObjClass, before looking at older versions in B and C.
+      methods_layer_init(cb, region, &(dest->methods_sm));
 
       break;
     }
@@ -531,10 +528,9 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
 
       dest->obj        = src->obj;
       dest->klass      = src->klass;
-      dest->fields_sm  = src->fields_sm;
-
-      assert(dest->fields_sm.external_size() == 0);
-      dest->fields_sm.set_layer_mark();
+      //NOTE: We expect lookup of fields to first check this new, mutable,
+      //  A-region ObjClass, before looking at older versions in B and C.
+      fields_layer_init(cb, region, &(dest->fields_sm));
 
       break;
     }
@@ -647,8 +643,6 @@ copy_MethodsSM_entry(uint64_t k, uint64_t v, void *closure)
 
   ret = cl->dest_sm->insert(cl->dest_cb,
                             cl->dest_region,
-                            a_read_cutoff,
-                            a_write_cutoff,
                             k,
                             v);
   assert(ret == 0);
@@ -683,8 +677,6 @@ copy_FieldsSM_entry(uint64_t k, uint64_t v, void *closure)
 
   ret = cl->dest_sm->insert(cl->dest_cb,
                             cl->dest_region,
-                            a_read_cutoff,
-                            a_write_cutoff,
                             k,
                             v);
   assert(ret == 0);
@@ -701,11 +693,9 @@ copy_FieldsSM_entry(uint64_t k, uint64_t v, void *closure)
 
 cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_offset_t object_offset) {
   assert(gc_phase == GC_PHASE_CONSOLIDATE);
-  assert(cb_offset_cmp(object_offset, a_read_cutoff) < 0);  //clones should only happen of B and C region objects.
 
   CBO<Obj> srcCBO = object_offset;
   CBO<Obj> cloneCBO = deriveMutableObjectLayer(cb, region, id, object_offset);
-  cb_offset_t read_cutoff = (cb_offset_cmp(object_offset, b_read_cutoff) >= 0 ? b_read_cutoff : c_read_cutoff);
   int ret;
 
   (void)ret;
@@ -729,7 +719,6 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
       };
 
       ret = srcClass->methods_sm.traverse((const struct cb **)cb,
-                                          read_cutoff,
                                           copy_MethodsSM_entry,
                                           &cl);
       assert(ret == 0);
@@ -747,7 +736,6 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
       };
 
       ret = srcInstance->fields_sm.traverse((const struct cb **)cb,
-                                            read_cutoff,
                                             copy_FieldsSM_entry,
                                             &cl);
       assert(ret == 0);
@@ -842,7 +830,6 @@ void freezeARegions(cb_offset_t new_lower_bound) {
 
 struct print_objtable_closure
 {
-  cb_offset_t  read_cutoff;
   const char  *desc;
 };
 
@@ -856,12 +843,6 @@ printObjtableTraversal(uint64_t  key,
   cb_offset_t offset = (cb_offset_t)val;
 
   (void)poc, (void)objID, (void)offset;
-
-  //Skip those entries which are below the read_cutoff.
-  if (cb_offset_cmp(offset, poc->read_cutoff) == -1) {
-    //KLOX_TRACE("%s skipping cutoff object #%ju.\n", poc->desc, (uintmax_t)objID.id);
-    return 0;
-  }
 
   KLOX_TRACE("%s #%ju -> @%ju\n",
              poc->desc,
@@ -888,28 +869,22 @@ void printStateOfWorld(const char *desc) {
 
   struct print_objtable_closure poc;
 
-  poc.read_cutoff = a_read_cutoff;
   poc.desc = "A";
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
-                               a_read_cutoff,
                                &(thread_objtable.a),
                                &printObjtableTraversal,
                                &poc);
   assert(ret == 0);
 
-  poc.read_cutoff = b_read_cutoff;
   poc.desc = "B";
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
-                               b_read_cutoff,
                                &(thread_objtable.b),
                                &printObjtableTraversal,
                                &poc);
   assert(ret == 0);
 
-  poc.read_cutoff = c_read_cutoff;
   poc.desc = "C";
   ret = objtablelayer_traverse((const struct cb **)&thread_cb,
-                               c_read_cutoff,
                                &(thread_objtable.c),
                                &printObjtableTraversal,
                                &poc);
@@ -1073,8 +1048,6 @@ void collectGarbage() {
 
   cb_offset_t this_point_of_gc = cb_cursor(thread_cb);
   cb_offset_t new_lower_bound = this_point_of_gc;
-  KLOX_TRACE("cutoff adjustment a_write_cutoff %ju -> %ju\n", (uintmax_t)a_write_cutoff, (uintmax_t)new_lower_bound);
-  a_write_cutoff = new_lower_bound;
 
   //NOTE: The loop here is to cover the exceedingly rare theoretical
   // circumstance that a gc_request_response be allocated to the same raw
@@ -1119,9 +1092,6 @@ void collectGarbage() {
   rr.mp()->req.new_lower_bound           = new_lower_bound;
   rr.mp()->req.bytes_allocated_before_gc = bytes_allocated_before_gc;
   rr.mp()->req.exec_phase                = exec_phase;
-
-  rr.mp()->req.b_read_cutoff = b_read_cutoff;
-  rr.mp()->req.c_read_cutoff = c_read_cutoff;
 
   // Prepare condensing objtable B+C
   ret = logged_region_create(&thread_cb,
@@ -1236,6 +1206,7 @@ void collectGarbage() {
 #endif  //KLOX_TRACE_ENABLE
 
   last_point_of_gc = this_point_of_gc;
+  thread_cutoff_offset = new_lower_bound;
 
   gc_submit_request(rr.mp());
 
@@ -1311,8 +1282,6 @@ void integrateGCResponse(struct gc_request_response *rr) {
   objtablelayer_init(&(thread_objtable.c));
   objtablelayer_assign(&(thread_objtable.b), &(rr->resp.objtable_new_b));
   thread_objtable_lower_bound = cb_region_start(&(rr->req.objtable_new_region));
-  KLOX_TRACE("cutoff adjustment a_read_cutoff %ju -> %ju\n", (uintmax_t)a_read_cutoff, (uintmax_t)rr->req.new_lower_bound);
-  a_read_cutoff = rr->req.new_lower_bound;
   assert(thread_objtable.b.sm.root_node_offset == CB_NULL || thread_objtable.b.sm.root_node_offset >= rr->req.new_lower_bound);
   assert(thread_objtable.a.sm.root_node_offset == CB_NULL || thread_objtable.a.sm.root_node_offset >= rr->req.new_lower_bound);
 

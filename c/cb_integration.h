@@ -16,16 +16,13 @@ extern __thread struct cb        *thread_cb;
 extern __thread void             *thread_ring_start;
 extern __thread cb_mask_t         thread_ring_mask;
 extern __thread struct cb_region  thread_region;
+extern __thread cb_offset_t       thread_cutoff_offset;
 extern __thread struct ObjTable   thread_objtable;
 extern __thread cb_offset_t       pinned_lower_bound;
 extern __thread bool              on_main_thread;
 extern __thread bool              can_print;
 extern __thread unsigned int      gc_integration_epoch;
 extern __thread cb_offset_t       thread_objtable_lower_bound;
-extern __thread cb_offset_t       a_read_cutoff;
-extern __thread cb_offset_t       a_write_cutoff;
-extern __thread cb_offset_t       b_read_cutoff;
-extern __thread cb_offset_t       c_read_cutoff;
 extern __thread unsigned int      addl_collision_nodes;
 extern __thread unsigned int      snap_addl_collision_nodes;
 
@@ -282,7 +279,6 @@ int objtablelayer_assign(ObjTableLayer *dest, ObjTableLayer *src);
 
 typedef int (*objtablelayer_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
 int objtablelayer_traverse(const struct cb                **cb,
-                           cb_offset_t                 read_cutoff,
                            ObjTableLayer                   *layer,
                            objtablelayer_traverse_func_t   func,
                            void                            *closure);
@@ -301,23 +297,20 @@ extern inline size_t objtablelayer_insertion_alignment_get() { return 8; }
 extern inline int
 objtablelayer_insert(struct cb        **cb,
                      struct cb_region  *region,
-                     cb_offset_t        read_cutoff,
-                     cb_offset_t        write_cutoff,
                      ObjTableLayer     *layer,
                      uint64_t           key,
                      uint64_t           value)
 {
-  return layer->sm.insert(cb, region, read_cutoff, write_cutoff, key, value);
+  return layer->sm.insert(cb, region, key, value);
 }
 
 extern inline bool
 objtablelayer_lookup(const struct cb *cb,
-                     cb_offset_t      read_cutoff,
                      ObjTableLayer   *layer,
                      uint64_t         key,
                      uint64_t        *value)
 {
-  return (layer->sm.lookup(cb, read_cutoff, key, value) && *value != CB_NULL);
+  return (layer->sm.lookup(cb, key, value) && *value != CB_NULL);
 }
 
 
@@ -486,9 +479,6 @@ struct gc_request
   cb_offset_t       new_lower_bound;
   size_t            bytes_allocated_before_gc;
   int               exec_phase;
-
-  cb_offset_t       b_read_cutoff;
-  cb_offset_t       c_read_cutoff;
 
   //Objtable
   struct cb_region  objtable_new_region;

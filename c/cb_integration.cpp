@@ -19,6 +19,7 @@ __thread struct cb        *thread_cb            = NULL;
 __thread void             *thread_ring_start;
 __thread cb_mask_t         thread_ring_mask;
 __thread struct cb_region  thread_region;
+__thread cb_offset_t       thread_cutoff_offset = (cb_offset_t)0ULL;
 __thread struct ObjTable   thread_objtable;
 
 //NOTE: For tandem allocations not yet having a presence in the VM state, we
@@ -32,10 +33,6 @@ __thread bool              on_main_thread = false;
 __thread bool              can_print      = false;
 __thread unsigned int      gc_integration_epoch;
 __thread cb_offset_t       thread_objtable_lower_bound;
-__thread cb_offset_t       a_read_cutoff;
-__thread cb_offset_t       a_write_cutoff;
-__thread cb_offset_t       b_read_cutoff;
-__thread cb_offset_t       c_read_cutoff;
 __thread unsigned int      addl_collision_nodes;
 __thread unsigned int      snap_addl_collision_nodes;
 
@@ -280,7 +277,6 @@ objtablelayer_assign(ObjTableLayer *dest, ObjTableLayer *src) {
 
 int
 objtablelayer_traverse(const struct cb                **cb,
-                       cb_offset_t                      read_cutoff,
                        ObjTableLayer                   *layer,
                        objtablelayer_traverse_func_t   func,
                        void                            *closure) {
@@ -290,7 +286,6 @@ objtablelayer_traverse(const struct cb                **cb,
 
   // Traverse the structmap entries.
   ret = layer->sm.traverse(cb,
-                           read_cutoff,
                            (structmap_traverse_func_t)func,
                            closure);
   assert(ret == 0);
@@ -355,7 +350,7 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
   unsigned int pre_node_count = obj_table->a.sm.node_count();
 #endif
 
-  ret = objtablelayer_insert(&thread_cb, &thread_region, a_read_cutoff, a_write_cutoff, &(obj_table->a), obj_id.id, offset);
+  ret = objtablelayer_insert(&thread_cb, &thread_region, &(obj_table->a), obj_id.id, offset);
   assert(ret == 0);
 
 #if 0
@@ -392,9 +387,9 @@ objtable_lookup(ObjTable *obj_table, ObjID obj_id)
 {
   uint64_t v;
 
-  if (objtablelayer_lookup(thread_cb, a_read_cutoff, &(obj_table->a), obj_id.id, &v) ||
-      objtablelayer_lookup(thread_cb, b_read_cutoff, &(obj_table->b), obj_id.id, &v) ||
-      objtablelayer_lookup(thread_cb, c_read_cutoff, &(obj_table->c), obj_id.id, &v)) {
+  if (objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v) ||
+      objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v) ||
+      objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v)) {
     return PURE_OFFSET((cb_offset_t)v);
   }
 
@@ -406,7 +401,7 @@ objtable_lookup_A(ObjTable *obj_table, ObjID obj_id)
 {
   uint64_t v;
 
-  if (objtablelayer_lookup(thread_cb, a_read_cutoff, &(obj_table->a), obj_id.id, &v))
+  if (objtablelayer_lookup(thread_cb, &(obj_table->a), obj_id.id, &v))
     return PURE_OFFSET((cb_offset_t)v);
 
   return CB_NULL;
@@ -417,7 +412,7 @@ objtable_lookup_B(ObjTable *obj_table, ObjID obj_id)
 {
   uint64_t v;
 
-  if (objtablelayer_lookup(thread_cb, b_read_cutoff, &(obj_table->b), obj_id.id, &v))
+  if (objtablelayer_lookup(thread_cb, &(obj_table->b), obj_id.id, &v))
     return PURE_OFFSET((cb_offset_t)v);
 
   return CB_NULL;
@@ -428,7 +423,7 @@ objtable_lookup_C(ObjTable *obj_table, ObjID obj_id)
 {
   uint64_t v;
 
-  if (objtablelayer_lookup(thread_cb, c_read_cutoff, &(obj_table->c), obj_id.id, &v))
+  if (objtablelayer_lookup(thread_cb, &(obj_table->c), obj_id.id, &v))
     return PURE_OFFSET((cb_offset_t)v);
 
   return CB_NULL;
@@ -450,13 +445,9 @@ void
 objtable_freeze(ObjTable *obj_table)
 {
   //assert(num_entries(obj_table->c) == 0); //FIXME create this check
-  obj_table->c = obj_table->b;
-  KLOX_TRACE("cutoff adjustment c_read_cutoff %ju -> %ju\n", (uintmax_t)c_read_cutoff, (uintmax_t)b_read_cutoff);
-  c_read_cutoff = b_read_cutoff;
-
-  obj_table->b = obj_table->a;
-  KLOX_TRACE("cutoff adjustment b_read_cutoff %ju -> %ju\n", (uintmax_t)b_read_cutoff, (uintmax_t)a_read_cutoff);
-  b_read_cutoff = a_read_cutoff;
+  objtablelayer_assign(&(obj_table->c), &(obj_table->b));
+  objtablelayer_assign(&(obj_table->b), &(obj_table->a));
+  objtablelayer_init(&(obj_table->a));
 
   //Although A will persistently represent the latest complete contents of B+C,
   //we will set the layer mark so that we can track only those new external
@@ -508,9 +499,9 @@ resolveAsMutableLayer(ObjID objid)
   assert(exec_phase == EXEC_PHASE_COMPILE || exec_phase == EXEC_PHASE_INTERPRET || exec_phase == EXEC_PHASE_FREE_WHITE_SET);
 
   o = objtable_lookup_A(&thread_objtable, objid);
-  if (o != CB_NULL && cb_offset_cmp(o, a_write_cutoff) >= 0) {
+  if (o != CB_NULL) {
     //KLOX_TRACE("#%ju@%ju found in objtable A\n", (uintmax_t)objid.id, (uintmax_t)o);
-    assert(cb_offset_cmp(o, a_read_cutoff) >= 0);
+    assert(cb_offset_cmp(o, thread_cutoff_offset) > 0);
     return o;
   }
 
@@ -518,7 +509,7 @@ resolveAsMutableLayer(ObjID objid)
   if (o != CB_NULL) {
     //KLOX_TRACE("#%ju@%ju found in objtable B\n", (uintmax_t)objid.id, (uintmax_t)o);
     cb_offset_t layer_o = deriveMutableObjectLayer(&thread_cb, &thread_region, objid, o);
-    assert(cb_offset_cmp(layer_o, b_read_cutoff) > 0);
+    assert(cb_offset_cmp(layer_o, thread_cutoff_offset) > 0);
     objtable_add_at(&thread_objtable, objid, layer_o);
     //KLOX_TRACE("#%ju@%ju is new mutable layer in objtable A\n", (uintmax_t)objid_.id, layer_o);
     //KLOX_TRACE_ONLY(printObjectValue(OBJ_VAL(objid)));
@@ -530,7 +521,7 @@ resolveAsMutableLayer(ObjID objid)
   assert(o != CB_NULL);
   //KLOX_TRACE("#%ju@%ju found in objtable C\n", (uintmax_t)objid.id, (uintmax_t)o);
   cb_offset_t layer_o = deriveMutableObjectLayer(&thread_cb, &thread_region, objid, o);
-  assert(cb_offset_cmp(layer_o, c_read_cutoff) > 0);
+  assert(cb_offset_cmp(layer_o, thread_cutoff_offset) > 0);
   objtable_add_at(&thread_objtable, objid, layer_o);
   //KLOX_TRACE("#%ju@%ju is new mutable layer in objtable A\n", (uintmax_t)objid_.id, layer_o);
   //KLOX_TRACE_ONLY(printObjectValue(OBJ_VAL(objid)));
@@ -931,10 +922,6 @@ gc_main_loop(void)
     objtablelayer_init(&(thread_objtable.a));
     objtablelayer_assign(&(thread_objtable.b), &(curr_request->req.objtable_b));
     objtablelayer_assign(&(thread_objtable.c), &(curr_request->req.objtable_c));
-    a_read_cutoff = curr_request->req.gc_dest_region_start;
-    a_write_cutoff = curr_request->req.gc_dest_region_start;
-    b_read_cutoff = curr_request->req.b_read_cutoff;
-    c_read_cutoff = curr_request->req.c_read_cutoff;
     ret = gc_perform(curr_request);
     if (ret != 0) {
       fprintf(stderr, "Failed to GC via CB.\n");
@@ -1017,15 +1004,13 @@ merge_c_class_methods(uint64_t  k,
 
   // The presence of an entry under this method name in the B class masks
   // our value, so no sense in copying it.
-  if (cl->b_class_methods_sm->contains_key(cl->src_cb, b_read_cutoff, k))
+  if (cl->b_class_methods_sm->contains_key(cl->src_cb, k))
     return 0;
 
   DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
 
   ret = cl->dest_methods_sm->insert(&(cl->dest_cb),
                                     cl->dest_region,
-                                    cb_region_start(cl->dest_region),
-                                    cb_region_start(cl->dest_region),
                                     k,
                                     v);
   assert(ret == 0);
@@ -1061,15 +1046,13 @@ merge_c_instance_fields(uint64_t  k,
 
   // The presence of an entry under this method name in the B class masks
   // our value, so no sense in copying it.
-  if (cl->b_instance_fields_sm->contains_key(cl->src_cb, b_read_cutoff, k))
+  if (cl->b_instance_fields_sm->contains_key(cl->src_cb, k))
     return 0;
 
   DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
 
   ret = cl->dest_fields_sm->insert(&(cl->dest_cb),
                                    cl->dest_region,
-                                   cb_region_start(cl->dest_region),
-                                   cb_region_start(cl->dest_region),
                                    k,
                                    v);
   assert(ret == 0);
@@ -1089,8 +1072,6 @@ struct copy_objtable_closure
   struct cb        *dest_cb;
   struct cb_region *dest_region;
   ObjTableLayer    *new_b;
-  cb_offset_t       b_read_cutoff;
-  cb_offset_t       c_read_cutoff;
   DEBUG_ONLY(size_t last_new_b_external_size);
   DEBUG_ONLY(size_t last_new_b_internal_size);
   DEBUG_ONLY(size_t last_new_b_size);
@@ -1116,12 +1097,6 @@ copy_objtable_b(uint64_t  key,
   int ret;
 
   assert(!ALREADY_WHITE(offset));
-
-  //Skip those entries which are below the b_read_cutoff.
-  if (cb_offset_cmp(offset, cl->b_read_cutoff) == -1) {
-    KLOX_TRACE("skipping cutoff object #%ju.\n", (uintmax_t)obj_id.id);
-    return 0;
-  }
 
   //Skip those ObjIDs which have been invalidated.  (CB_NULL serves as a
   // tombstone in such cases).
@@ -1155,8 +1130,6 @@ copy_objtable_b(uint64_t  key,
 
   ret = objtablelayer_insert(&(cl->dest_cb),
                              cl->dest_region,
-                             cb_region_start(cl->dest_region),
-                             cb_region_start(cl->dest_region),
                              cl->new_b,
                              key,
                              (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
@@ -1217,12 +1190,6 @@ copy_objtable_c_not_in_b(uint64_t  key,
   //Region C should never contain invalidated entries.
   assert(cEntryOffset != CB_NULL);
 
-  //Skip those entries which are below the c_read_cutoff.
-  if (cb_offset_cmp(cEntryOffset, cl->c_read_cutoff) == -1) {
-    KLOX_TRACE("skipping cutoff object #%ju.\n", (uintmax_t)key);
-    return 0;
-  }
-
   //Skip those ObjIDs which are not marked dark (and are therefore unreachable
   // from the roots of the VM state).
   if (!objectIsDark(objOID)) {
@@ -1242,7 +1209,7 @@ copy_objtable_c_not_in_b(uint64_t  key,
   // If an entry exists in both B and C, B's entry should mask C's EXCEPT when
   // the B entry and C entry can be merged (which is when they are both ObjClass
   // or both ObjInstance objects).
-  if (objtablelayer_lookup(cl->src_cb, a_read_cutoff, cl->new_b, key, &temp_val) == true) {
+  if (objtablelayer_lookup(cl->src_cb, cl->new_b, key, &temp_val) == true) {
     cb_offset_t bEntryOffset = (cb_offset_t)temp_val;
     CBO<Obj> bEntryObj = bEntryOffset;
     CBO<Obj> cEntryObj = cEntryOffset;
@@ -1264,7 +1231,6 @@ copy_objtable_c_not_in_b(uint64_t  key,
       DEBUG_ONLY(subclosure.last_sm_size = classB->methods_sm.size());
 
       ret = classC->methods_sm.traverse((const struct cb **)&(cl->src_cb),
-                                        c_read_cutoff,
                                         merge_c_class_methods,
                                         &subclosure);
       assert(ret == 0);
@@ -1293,7 +1259,6 @@ copy_objtable_c_not_in_b(uint64_t  key,
       DEBUG_ONLY(subclosure.last_sm_size = instanceB->fields_sm.size());
 
       ret = instanceC->fields_sm.traverse((const struct cb **)&(cl->src_cb),
-                                          c_read_cutoff,
                                           merge_c_instance_fields,
                                           &subclosure);
       assert(ret == 0);
@@ -1331,8 +1296,6 @@ copy_objtable_c_not_in_b(uint64_t  key,
 
     ret = objtablelayer_insert(&(cl->dest_cb),
                                cl->dest_region,
-                               cb_region_start(cl->dest_region),
-                               cb_region_start(cl->dest_region),
                                cl->new_b,
                                key,
                                (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
@@ -1557,7 +1520,6 @@ copy_globals_c_not_in_b(const struct cb_term *key_term,
 
 struct gray_objtable_closure
 {
-  cb_offset_t  read_cutoff;
   const char  *desc;
 };
 
@@ -1566,13 +1528,8 @@ grayObjtableTraversal(uint64_t key, uint64_t value, void *closure)
 {
   struct gray_objtable_closure *goc = (struct gray_objtable_closure *)closure;
   ObjID objID = { .id = key };
-  cb_offset_t offset = (cb_offset_t)value;
 
-  //Skip those entries which are below the read_cutoff.
-  if (cb_offset_cmp(offset, goc->read_cutoff) == -1) {
-    //KLOX_TRACE("skipping cutoff object #%ju.\n", (uintmax_t)obj_id.id);
-    return 0;
-  }
+  (void)goc;
 
   KLOX_TRACE("%s graying #%ju\n",
              goc->desc,
@@ -1620,18 +1577,14 @@ gc_perform(struct gc_request_response *rr)
     struct gray_objtable_closure goc;
 
     goc.desc = "B";
-    goc.read_cutoff = b_read_cutoff;
     ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
-                                 b_read_cutoff,
                                  &(rr->req.objtable_b),
                                  &grayObjtableTraversal,
                                  &goc);
     assert(ret == 0);
 
     goc.desc = "C";
-    goc.read_cutoff = c_read_cutoff;
     ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
-                                 c_read_cutoff,
                                  &(rr->req.objtable_c),
                                  &grayObjtableTraversal,
                                  &goc);
@@ -1720,8 +1673,6 @@ gc_perform(struct gc_request_response *rr)
     closure.dest_cb     = rr->req.orig_cb;
     closure.dest_region = &(rr->req.objtable_new_region);
     closure.new_b       = &(rr->resp.objtable_new_b);
-    closure.b_read_cutoff = b_read_cutoff;
-    closure.c_read_cutoff = c_read_cutoff;
     DEBUG_ONLY(closure.last_new_b_external_size = objtablelayer_external_size(&(rr->resp.objtable_new_b)));
     DEBUG_ONLY(closure.last_new_b_internal_size = objtablelayer_internal_size(&(rr->resp.objtable_new_b)));
     DEBUG_ONLY(closure.last_new_b_size = objtablelayer_size(&(rr->resp.objtable_new_b)));
@@ -1730,7 +1681,6 @@ gc_perform(struct gc_request_response *rr)
     KLOX_TRACE("condense objtable 2:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
 
     ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
-                                 b_read_cutoff,
                                  &(rr->req.objtable_b),
                                  copy_objtable_b,
                                  &closure);
@@ -1743,7 +1693,6 @@ gc_perform(struct gc_request_response *rr)
                (uintmax_t)(cb_region_cursor(&(rr->req.objtable_new_region)) - cb_region_start(&(rr->req.objtable_new_region))));
 
     ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
-                                 c_read_cutoff,
                                  &(rr->req.objtable_c),
                                  copy_objtable_c_not_in_b,
                                  &closure);
