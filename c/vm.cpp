@@ -475,9 +475,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
                                                   FieldsSM::MODIFICATION_MAX_SIZE));
 
   size_t size_before = instanceA.cp()->fields_sm.size();
-#if 0
   unsigned int nodes_before = instanceA.cp()->fields_sm.node_count();
-#endif
 
   FieldsSM fields_sm = instanceA.mp()->fields_sm;
 
@@ -490,9 +488,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   instanceA.mp()->fields_sm = fields_sm;
 
   size_t size_after = instanceA.cp()->fields_sm.size();
-#if 0
   unsigned int nodes_after = instanceA.cp()->fields_sm.node_count();
-#endif
 
   //NOTE: Because this field addition is done to an ObjInstance already present
   // in the objtable, we must manually inform the objtable of this independent
@@ -503,21 +499,19 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
                                                   - (ssize_t)FieldsSM::MODIFICATION_MAX_SIZE));
 
-#if 0
   //Account for future structmap enlargement on merge due to slot collisions.
   assert(nodes_after >= nodes_before);
   unsigned int delta_node_count = nodes_after - nodes_before;
   unsigned int b_collide_node_count = (instanceB.is_nil() ? 0 :
-    instanceB.cp()->fields_sm.would_collide_node_count(thread_cb, b_read_cutoff, k));
+    instanceB.cp()->fields_sm.would_collide_node_count(thread_cb, k));
   unsigned int c_collide_node_count = (instanceC.is_nil() ? 0 :
-    instanceC.cp()->fields_sm.would_collide_node_count(thread_cb, c_read_cutoff, k));
+    instanceC.cp()->fields_sm.would_collide_node_count(thread_cb, k));
   unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count : c_collide_node_count);
   if (max_collide_node_count > delta_node_count) {
     unsigned int addl_node_count = max_collide_node_count - delta_node_count;
     KLOX_TRACE("Need addl_nodes (instance): %ju\n", (uintmax_t)addl_node_count);
     addl_collision_nodes += addl_node_count;
   }
-#endif
 }
 
 static bool classMethodGet(OID<ObjClass> klass, Value key, Value *value) {
@@ -558,9 +552,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
                                                   MethodsSM::MODIFICATION_MAX_SIZE));
 
   size_t size_before = classA.cp()->methods_sm.size();
-#if 0
   size_t nodes_before = classA.cp()->methods_sm.node_count();
-#endif
 
   MethodsSM methods_sm = classA.mp()->methods_sm;
 
@@ -573,9 +565,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   classA.mp()->methods_sm = methods_sm;
 
   size_t size_after = classA.cp()->methods_sm.size();
-#if 0
   size_t nodes_after = classA.cp()->methods_sm.node_count();
-#endif
 
   //NOTE: Because this method addition is done to an ObjClass already present
   // in the objtable, we must manually inform the objtable of this independent
@@ -586,21 +576,19 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
                                                   - (ssize_t)MethodsSM::MODIFICATION_MAX_SIZE));
 
-#if 0
   //Account for future structmap enlargement on merge due to slot collisions.
   assert(nodes_after >= nodes_before);
   unsigned int delta_node_count = nodes_after - nodes_before;
   unsigned int b_collide_node_count = (classB.is_nil() ? 0 :
-    classB.cp()->methods_sm.would_collide_node_count(thread_cb, b_read_cutoff, k));
+    classB.cp()->methods_sm.would_collide_node_count(thread_cb, k));
   unsigned int c_collide_node_count = (classC.is_nil() ? 0 :
-    classC.cp()->methods_sm.would_collide_node_count(thread_cb, c_read_cutoff, k));
+    classC.cp()->methods_sm.would_collide_node_count(thread_cb, k));
   unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count : c_collide_node_count);
   if (max_collide_node_count > delta_node_count) {
     unsigned int addl_node_count = max_collide_node_count - delta_node_count;
     KLOX_TRACE("Need addl_nodes (class): %ju\n", (uintmax_t)addl_node_count);
     addl_collision_nodes += addl_node_count;
   }
-#endif
 }
 
 static int

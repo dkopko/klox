@@ -346,29 +346,25 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
   int ret;
   (void)ret;
 
-#if 0
   unsigned int pre_node_count = obj_table->a.sm.node_count();
-#endif
 
   ret = objtablelayer_insert(&thread_cb, &thread_region, &(obj_table->a), obj_id.id, offset);
   assert(ret == 0);
 
-#if 0
   unsigned int post_node_count = obj_table->a.sm.node_count();
   assert(post_node_count >= pre_node_count);
 
   //Account for future structmap enlargement on merge due to slot collisions.
   unsigned int delta_node_count = post_node_count - pre_node_count;
   assert(post_node_count >= pre_node_count);
-  unsigned int b_collide_node_count = obj_table->b.sm.would_collide_node_count(thread_cb, b_read_cutoff, obj_id.id);
-  unsigned int c_collide_node_count = obj_table->c.sm.would_collide_node_count(thread_cb, c_read_cutoff, obj_id.id);
+  unsigned int b_collide_node_count = obj_table->b.sm.would_collide_node_count(thread_cb, obj_id.id);
+  unsigned int c_collide_node_count = obj_table->c.sm.would_collide_node_count(thread_cb, obj_id.id);
   unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count : c_collide_node_count);
   if (max_collide_node_count > delta_node_count) {
     unsigned int addl_node_count = max_collide_node_count - delta_node_count;
     KLOX_TRACE("Need addl_nodes (objtable): %ju\n", (uintmax_t)addl_node_count);
     addl_collision_nodes += addl_node_count;
   }
-#endif
 }
 
 ObjID
