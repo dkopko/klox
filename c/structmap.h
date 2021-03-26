@@ -208,19 +208,17 @@ struct structmap
     uint64_t child = entry->child;
     int path;
 
-    for (int shl = entry->shl; shl; shl -= LEVEL_BITS) {
+    //for (int shl = entry->shl; shl >= 0; shl -= LEVEL_BITS) {
+    int shl = entry->shl;
+    do {
       n = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
       path = (key >> shl) & (((uint64_t)1 << LEVEL_BITS) - 1);
       child = n->children[path];
       if (child == 1) { return false; }
-    }
-    n = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, child);
-    path = key & (((uint64_t)1 << LEVEL_BITS) - 1);
-    uint64_t tmpval = n->children[path];
-    if (tmpval == 1) { return false; }
+      shl -= LEVEL_BITS;
+    } while(shl >= 0);
 
-    *value = tmpval;
-
+    *value = child;
     return true;
 
 #if 0
