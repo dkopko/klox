@@ -50,21 +50,9 @@ static const int OBJTABLELAYER_FIRSTLEVEL_BITS = 10;
 static const int FIELDS_FIRSTLEVEL_BITS = 0;
 static const int METHODS_FIRSTLEVEL_BITS = 0;
 
-extern inline bool
-objtable_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v)
-{
-  return PURE_OFFSET((cb_offset_t)v) != CB_NULL && cb_offset_cmp(PURE_OFFSET((cb_offset_t)v), read_cutoff) < 0;
-}
-
-extern inline bool
-null_is_value_read_cutoff(cb_offset_t read_cutoff, uint64_t v)
-{
-  return false;
-}
-
-typedef structmap<9, 5, objtable_is_value_read_cutoff> ObjTableSM;
-typedef structmap<0, 5, null_is_value_read_cutoff> MethodsSM;
-typedef structmap<0, 5, null_is_value_read_cutoff> FieldsSM;
+typedef structmap<9, 5> ObjTableSM;
+typedef structmap<0, 5> MethodsSM;
+typedef structmap<0, 5> FieldsSM;
 
 #if NDEBUG
 #define DEBUG_ONLY(x)

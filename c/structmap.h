@@ -54,7 +54,7 @@ entryoffsetof(const structmap_entry *entry) {
 }
 
 
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 struct structmap
 {
   uint64_t               lowest_inserted_key;
@@ -206,9 +206,9 @@ struct structmap
   }
 };
 
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 void
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::init(structmap_value_size_t sizeof_value)
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::init(structmap_value_size_t sizeof_value)
 {
   this->lowest_inserted_key = 0;
   this->highest_inserted_key = 0;
@@ -225,11 +225,11 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::init(structmap_value_size_t size
   }
 }
 
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 int
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::node_alloc(struct cb        **cb,
-                                                           struct cb_region  *region,
-                                                           cb_offset_t       *node_offset)
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::node_alloc(struct cb        **cb,
+                                                   struct cb_region  *region,
+                                                   cb_offset_t       *node_offset)
 {
     cb_offset_t new_node_offset;
     int ret;
@@ -257,10 +257,10 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::node_alloc(struct cb        **cb
     return 0;
 }
 
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 void
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::ensure_modification_size(struct cb        **cb,
-                                                                         struct cb_region  *region)
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::ensure_modification_size(struct cb        **cb,
+                                                                 struct cb_region  *region)
 {
   int     nodes_left = MODIFICATION_MAX_NODES;
   ssize_t size_left_in_region = (ssize_t)(cb_region_end(region) - cb_region_cursor(region) - (alignof(node) - 1));
@@ -286,12 +286,12 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::ensure_modification_size(struct 
   cb_rewind_to(*cb, cursor);
 }
 
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 int
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::insert(struct cb        **cb,
-                                                       struct cb_region  *region,
-                                                       uint64_t           key,
-                                                       uint64_t           value)
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::insert(struct cb        **cb,
+                                               struct cb_region  *region,
+                                               uint64_t           key,
+                                               uint64_t           value)
 {
   int ret;
 
@@ -381,11 +381,11 @@ exit_loop:
   return 0;
 }
 
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 bool
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::lookup_slowpath(const struct cb *cb,
-                                                                uint64_t         key,
-                                                                uint64_t        *value) const
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::lookup_slowpath(const struct cb *cb,
+                                                        uint64_t         key,
+                                                        uint64_t        *value) const
 {
   const struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
   unsigned int key_route_base = FIRSTLEVEL_BITS;
@@ -409,10 +409,10 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::lookup_slowpath(const struct cb 
 }
 
 
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 unsigned int
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::would_collide_node_count_slowpath(const struct cb *cb,
-                                                                                  uint64_t         key) const
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::would_collide_node_count_slowpath(const struct cb *cb,
+                                                                          uint64_t         key) const
 {
   //NOTE: The purpose of this function is to determine how many nodes would need
   // to additionally be created for the target structmap 'sm' if key 'key' were
@@ -460,11 +460,11 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::would_collide_node_count_slowpat
   return addl_nodes;
 }
 
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS, structmap_is_value_read_cutoff_t CUTOFF>
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 int
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS, CUTOFF>::traverse(const struct cb           **cb,
-                                                         structmap_traverse_func_t   func,
-                                                         void                       *closure) const
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::traverse(const struct cb           **cb,
+                                                 structmap_traverse_func_t   func,
+                                                 void                       *closure) const
 {
   uint64_t v;
 
