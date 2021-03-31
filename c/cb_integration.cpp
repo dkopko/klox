@@ -445,11 +445,6 @@ objtable_freeze(ObjTable *obj_table)
   objtablelayer_assign(&(obj_table->b), &(obj_table->a));
   objtablelayer_init(&(obj_table->a));
 
-  //Although A will persistently represent the latest complete contents of B+C,
-  //we will set the layer mark so that we can track only those new external
-  //sizes and additional nodes as caused by subsequent mutations in A.
-  obj_table->a.sm.set_layer_mark();
-
   //Track only new additional collision nodes.
   snap_addl_collision_nodes = addl_collision_nodes;
   addl_collision_nodes = 0;
@@ -458,32 +453,16 @@ objtable_freeze(ObjTable *obj_table)
 size_t
 objtable_consolidation_size(ObjTable *obj_table)
 {
-  size_t b_external_size        = obj_table->b.sm.external_size();
-  size_t b_internal_size        = obj_table->b.sm.internal_size();
-  size_t c_external_size        = obj_table->c.sm.external_size();
-  size_t c_internal_size        = obj_table->c.sm.internal_size();
-  ssize_t b_layer_external_size = obj_table->b.sm.layer_external_size();
-  ssize_t b_layer_internal_size = obj_table->b.sm.layer_internal_size();
-  ssize_t c_layer_external_size = obj_table->c.sm.layer_external_size();
-  ssize_t c_layer_internal_size = obj_table->c.sm.layer_internal_size();
-  size_t addl_size = snap_addl_collision_nodes * (sizeof(ObjTableSM::node) + alignof(ObjTableSM::node) - 1);
+  size_t b_external_size = obj_table->b.sm.external_size();
+  size_t b_internal_size = obj_table->b.sm.internal_size();
+  size_t c_external_size = obj_table->c.sm.external_size();
+  size_t c_internal_size = obj_table->c.sm.internal_size();
+  size_t addl_size       = snap_addl_collision_nodes * (sizeof(ObjTableSM::node) + alignof(ObjTableSM::node) - 1);
 
-  (void)b_external_size, (void)b_internal_size, (void)c_external_size, (void)c_internal_size;
-  (void)b_layer_external_size, (void)b_layer_internal_size, (void)c_layer_external_size, (void)c_layer_internal_size;
-  (void)addl_size;
+  KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu, modification_size: %zu, addl_size: %zu\n",
+         b_external_size, b_internal_size, c_external_size, c_internal_size, ObjTableSM::MODIFICATION_MAX_SIZE, addl_size);
 
-  KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu\n",
-         b_external_size, b_internal_size, c_external_size, c_internal_size);
-  KLOX_TRACE("objtable b_layer_external_size: %zd, b_layer_internal_size: %zd, c_layer_external_size: %zd, c_layer_internal_size: %zd, modification_size: %zu, addl_size: %zu\n",
-         b_layer_external_size, b_layer_internal_size, c_layer_external_size, c_layer_internal_size, ObjTableSM::MODIFICATION_MAX_SIZE, addl_size);
-
-  assert(b_layer_external_size <= (ssize_t)b_external_size);
-  assert(b_layer_internal_size <= (ssize_t)b_internal_size);
-  assert(c_layer_external_size == (ssize_t)c_external_size);
-  assert(c_layer_internal_size == (ssize_t)c_internal_size);
-
-  //NOTE: All objtablelayer's structmaps must have the same number of firstlevel bits.
-  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + ObjTableSM::MODIFICATION_MAX_SIZE + addl_size;
+  return b_external_size + b_internal_size + c_external_size + c_internal_size + ObjTableSM::MODIFICATION_MAX_SIZE + addl_size;
 }
 
 cb_offset_t

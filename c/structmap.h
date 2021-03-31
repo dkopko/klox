@@ -61,8 +61,6 @@ struct structmap
   cb_offset_t            root_node_offset;
   unsigned int           node_count_;
   size_t                 total_external_size;
-  unsigned int           layer_mark_node_count;
-  size_t                 layer_mark_external_size;
   structmap_value_size_t sizeof_value;
   struct structmap_entry entries[1 << FIRSTLEVEL_BITS];
 
@@ -122,30 +120,6 @@ struct structmap
   external_size_adjust(ssize_t adjustment) {
     assert(adjustment >= 0 || -adjustment < (ssize_t)this->total_external_size);
     this->total_external_size = (size_t)((ssize_t)this->total_external_size + adjustment);
-  }
-
-  void
-  set_layer_mark()
-  {
-    this->layer_mark_external_size = this->total_external_size;
-    this->layer_mark_node_count = this->node_count_;
-  }
-
-  //NOTE: This returns an ssize_t in case the marked layer has incorporated a
-  // reduction of internal nodes. (as of 2020-02-12 reduction of internal nodes is not yet possible)
-  ssize_t
-  layer_internal_size() const
-  {
-    return ((int)node_count() - (int)this->layer_mark_node_count) * (ssize_t)(sizeof(node) + alignof(node) - 1);
-  }
-
-  //NOTE: This returns an ssize_t in case the marked layer has incorporated a
-  // reduction of external sizes (e.g. via replacement of a key's value with a
-  // value bearing a smaller external size).
-  ssize_t
-  layer_external_size() const
-  {
-    return (ssize_t)this->total_external_size - (ssize_t)this->layer_mark_external_size;
   }
 
   size_t
@@ -222,8 +196,6 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::init(structmap_value_size_t sizeof_value
   this->root_node_offset = CB_NULL;
   this->node_count_ = 0;
   this->total_external_size = 0;
-  this->layer_mark_node_count = 0;
-  this->layer_mark_external_size = 0;
   this->sizeof_value = sizeof_value;
 
   for (int i = 0; i < (1 << FIRSTLEVEL_BITS); ++i) {
@@ -399,9 +371,8 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::would_collide_node_count_slowpath(const 
   // to additionally be created for the target structmap 'sm' if key 'key' were
   // to be inserted.  It is used when mutating the A layer to check for the
   // additional size needing to be allocated for future consolidation merge of
-  // the A layer keys down with the keys of the B and C layers.
-  // For this to work, all of the A, B, and C layers must use the same slot
-  // layouts (once this becomes dynamic in the future).
+  // the A layer keys down with the keys of the B and C layers. For this to
+  // work, all of the A, B, and C layers must use the same slot layouts.
 
   assert(key > 0);
 
