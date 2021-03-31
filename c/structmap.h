@@ -18,15 +18,14 @@ extern __thread cb_mask_t thread_ring_mask;
 //    for NULL-like sentinels.  FIXME is this still true after the revision toward the Bagwell-like implementation?
 
 typedef size_t (*structmap_value_size_t)(const struct cb *cb, uint64_t v);
-typedef bool (*structmap_is_value_read_cutoff_t)(cb_offset_t read_cutoff, uint64_t v);
 typedef int (*structmap_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
 
 
 enum structmap_entry_type
 {
-  STRUCTMAP_ENTRY_EMPTY = 0x0,
-  STRUCTMAP_ENTRY_ITEM  = 0x1,
-  STRUCTMAP_ENTRY_NODE  = 0x2
+  STRUCTMAP_ENTRY_NODE  = 0x0,
+  STRUCTMAP_ENTRY_EMPTY = 0x1,
+  STRUCTMAP_ENTRY_ITEM  = 0x2
 };
 
 static const unsigned int STRUCTMAP_TYPEMASK = 0x3;
@@ -88,11 +87,6 @@ struct structmap
   static void
   ensure_modification_size(struct cb        **cb,
                            struct cb_region  *region);
-
-  bool
-  lookup_slowpath(const struct cb *cb,
-                  uint64_t         key,
-                  uint64_t        *value) const;
 
   unsigned int
   would_collide_node_count_slowpath(const struct cb *cb,
@@ -168,13 +162,26 @@ struct structmap
   {
     const struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
 
-    if (entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM
-        && key == entrykeyof(entry)) {
+    if (entry->key_offset_and_type == ((key << 2) | STRUCTMAP_ENTRY_ITEM)) {
       *value = entry->value;
       return true;
     }
 
-    return this->lookup_slowpath(cb, key, value);
+    unsigned int key_route_base = FIRSTLEVEL_BITS;
+
+    while (entrytypeof(entry) == STRUCTMAP_ENTRY_NODE) {
+        const node *child_node = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(entry));
+        unsigned int child_route = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
+        entry = &(child_node->entries[child_route]);
+        key_route_base += LEVEL_BITS;
+    }
+
+    if (entry->key_offset_and_type == ((key << 2) | STRUCTMAP_ENTRY_ITEM)) {
+      *value = entry->value;
+      return true;
+    }
+
+    return false;
   }
 
   int
@@ -220,7 +227,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::init(structmap_value_size_t sizeof_value
   this->sizeof_value = sizeof_value;
 
   for (int i = 0; i < (1 << FIRSTLEVEL_BITS); ++i) {
-    this->entries[i].key_offset_and_type = 0;
+    this->entries[i].key_offset_and_type = STRUCTMAP_ENTRY_EMPTY;
     this->entries[i].value = 0;
   }
 }
@@ -247,7 +254,9 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::node_alloc(struct cb        **cb,
     // Initialize.
     {
       node *sn = (node *)cb_at(*cb, new_node_offset);
-      memset(sn, 0, sizeof(*sn));
+      for (int i = 0; i < (1 << LEVEL_BITS); ++i) {
+        sn->entries[i].key_offset_and_type = STRUCTMAP_ENTRY_EMPTY;
+      }
     }
 
     ++(this->node_count_);
@@ -380,34 +389,6 @@ exit_loop:
 
   return 0;
 }
-
-template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
-bool
-structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::lookup_slowpath(const struct cb *cb,
-                                                        uint64_t         key,
-                                                        uint64_t        *value) const
-{
-  const struct structmap_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
-  unsigned int key_route_base = FIRSTLEVEL_BITS;
-
-  //FIXME consider cb_at_immed().
-
-  while (entrytypeof(entry) == STRUCTMAP_ENTRY_NODE) {
-      const node *child_node = (node *)cb_at(cb, entryoffsetof(entry));
-      unsigned int child_route = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
-      entry = &(child_node->entries[child_route]);
-      key_route_base += LEVEL_BITS;
-  }
-
-  if (entrytypeof(entry) == STRUCTMAP_ENTRY_ITEM
-      && key == entrykeyof(entry)) {
-    *value = entry->value;
-    return true;
-  }
-
-  return false;
-}
-
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 unsigned int
