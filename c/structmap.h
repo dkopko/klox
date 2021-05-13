@@ -8,10 +8,17 @@
 #include <cb.h>
 #include <cb_region.h>
 
+#if NDEBUG
+#define DEBUG_ONLY(x)
+#else
+#define DEBUG_ONLY(x) x
+#endif
+
 #define CB_NULL ((cb_offset_t)0)
 
-extern __thread void *thread_ring_start;
-extern __thread cb_mask_t thread_ring_mask;
+extern __thread void      *thread_ring_start;
+extern __thread cb_mask_t  thread_ring_mask;
+extern __thread bool       on_main_thread;
 
 //NOTES:
 // 1) Neither keys nor values are allowed to be 0, as this value is reserved
@@ -243,28 +250,26 @@ void
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::ensure_modification_size(struct cb        **cb,
                                                                  struct cb_region  *region)
 {
-  int     nodes_left = MODIFICATION_MAX_NODES;
-  ssize_t size_left_in_region = (ssize_t)(cb_region_end(region) - cb_region_cursor(region) - (alignof(node) - 1));
   int ret;
 
   (void)ret;
 
-  //First, check whether we have enough size in this region alone.
-  if (size_left_in_region > 0) {
-    nodes_left -= size_left_in_region / sizeof(node);
-    if (nodes_left <= 0)
-      return; //Success, have enough space in remainder of this region.
-  }
-
-  //Otherwise, simulate an allocation of the size we may need.
+  //Simulate an allocation of the size we may need.
   cb_offset_t      cursor     = cb_cursor(*cb);
   struct cb_region region_tmp = *region;
   cb_offset_t      offset_tmp;
 
-  ret = cb_region_memalign(cb, &region_tmp, &offset_tmp, alignof(node), nodes_left * sizeof(node));
+  ret = cb_region_memalign(cb, &region_tmp, &offset_tmp, alignof(node), MODIFICATION_MAX_NODES * sizeof(node));
   assert(ret == CB_SUCCESS);
   //if (ret != CB_SUCCESS) { printf("DANDEBUGwtf5\n"); abort(); }
-  cb_rewind_to(*cb, cursor);
+  if (region_tmp.start != region->start) {
+    //NOTE: This is only appropriate on the main thread.  The GC thread should
+    // never overwrite the cursor, as it is owned by and in use by the main thread.
+    // But the region in use by the GC thread should be pre-sized and therefore
+    // tmp.start == region->start.
+    assert(on_main_thread);
+    cb_rewind_to(*cb, cursor);
+  }
 }
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
