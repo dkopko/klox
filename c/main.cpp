@@ -110,7 +110,7 @@ int main(int argc, const char* argv[]) {
   }
 
   /* Create thread-local continuous buffer region. */
-  ret = logged_region_create(&thread_cb, &thread_region, 1, 1024, 0);
+  ret = logged_region_create(&thread_cb, &thread_region, 1, 1024 * 1024, 0);
   if (ret != CB_SUCCESS)
   {
       fprintf(stderr, "Could not create region.\n");

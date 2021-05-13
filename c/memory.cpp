@@ -1076,7 +1076,7 @@ void collectGarbage() {
   // presently-in-flight allocation (as of this writing, always the case), we
   // would want it to complete at a higher offset than new_lower_bound.  We also
   // want all of the new A regions to also be beyond new_lower_bound.
-  ret = logged_region_create(&thread_cb, &thread_region, 1, 1024, 0);
+  ret = logged_region_create(&thread_cb, &thread_region, 1, 1024 * 1024, 0);
 
   exec_phase = EXEC_PHASE_FREEZE_A_REGIONS;
   freezeARegions(new_lower_bound);

@@ -1548,7 +1548,7 @@ gc_perform(struct gc_request_response *rr)
   gc_phase = GC_PHASE_RESET_GC_STATE;
   cb_rewind_to(gc_thread_cb, 0);
   KLOX_TRACE("before GC region allocation\n");
-  ret = logged_region_create(&gc_thread_cb, &gc_thread_region, 1, 1024, 0);
+  ret = logged_region_create(&gc_thread_cb, &gc_thread_region, 1, 1024 * 1024, 0);
   KLOX_TRACE("after GC region allocation\n");
   if (ret != CB_SUCCESS)
   {
