@@ -279,6 +279,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::insert(struct cb        **cb,
                                                uint64_t           key,
                                                uint64_t           value)
 {
+  DEBUG_ONLY(unsigned int pre_node_count = this->node_count_);
   int ret;
 
   (void)ret;
@@ -315,8 +316,11 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::insert(struct cb        **cb,
         // Otherwise, there is a collision in this slot at this level, create
         // a child node and add the old_key/old_value to it.
         cb_offset_t child_node_offset = CB_NULL; //FIXME shouldn't have to initialize
+        DEBUG_ONLY(struct cb *old_cb = *cb);
         ret = this->node_alloc(cb, region, &child_node_offset);
         assert(ret == 0);
+        DEBUG_ONLY(struct cb *new_cb = *cb);
+        assert(old_cb == new_cb);
         node *child_node = (node *)cb_at(*cb, child_node_offset);
         unsigned int child_route = (entrykeyof(entry) >> key_route_base) & ((1 << LEVEL_BITS) - 1);
         struct structmap_entry *child_entry = &(child_node->entries[child_route]);
@@ -356,6 +360,11 @@ exit_loop:
 
 #ifndef NDEBUG
   {
+    unsigned int post_node_count = this->node_count_;
+
+    assert(post_node_count >= pre_node_count);
+    assert(post_node_count - pre_node_count <= MODIFICATION_MAX_NODES);
+
     uint64_t test_v;
     bool lookup_success = this->lookup(*cb, key, &test_v);
     //printf("lookup_success? %d, same? %d:  #%ju -> @%ju\n", lookup_success, test_v == value, (uintmax_t)key, (uintmax_t)value);
@@ -414,6 +423,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::would_collide_node_count_slowpath(const 
     key_child_slot = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
   }
 
+  assert(addl_nodes <= MODIFICATION_MAX_NODES);
   return addl_nodes;
 }
 
