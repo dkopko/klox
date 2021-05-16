@@ -295,6 +295,7 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::insert(struct cb        **cb,
                                                uint64_t           key,
                                                uint64_t           value)
 {
+  DEBUG_ONLY(unsigned int pre_node_count = this->node_count_);
   uint64_t orig_key = key;
   int ret;
 
@@ -346,6 +347,11 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::insert(struct cb        **cb,
 
 #ifndef NDEBUG
   {
+    unsigned int post_node_count = this->node_count_;
+
+    assert(post_node_count >= pre_node_count);
+    assert(post_node_count - pre_node_count <= MODIFICATION_MAX_NODES);
+
     uint64_t test_v;
     bool lookup_success = lookup(*cb, orig_key, &test_v);
     assert(lookup_success);
