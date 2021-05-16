@@ -487,7 +487,8 @@ objtable_consolidation_size(ObjTable *obj_table)
   assert(c_layer_internal_size == (ssize_t)c_internal_size);
 
   //NOTE: All objtablelayer's structmaps must have the same number of firstlevel bits.
-  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + ObjTableSM::MODIFICATION_MAX_SIZE + addl_size;
+  //NOTE: One MODIFICATION_MAX_SIZE encompasses the space need for the mutations themselves. The other is because the GC itself will *also* reserve MODIFICATION_MAX_SIZE on insertion.
+  return b_layer_external_size + b_layer_internal_size + c_external_size + c_internal_size + (2 * ObjTableSM::MODIFICATION_MAX_SIZE) + addl_size;
 }
 
 cb_offset_t
@@ -1124,8 +1125,6 @@ copy_objtable_b(uint64_t  key,
     cl->white_list = obj_id;
   }
 
-  DEBUG_ONLY(cb_region_align_cursor(&(cl->dest_cb), cl->dest_region, objtablelayer_insertion_alignment_get()));
-
   DEBUG_ONLY(cb_offset_t c0b = cb_region_cursor(cl->dest_region));
 
   ret = objtablelayer_insert(&(cl->dest_cb),
@@ -1289,8 +1288,6 @@ copy_objtable_c_not_in_b(uint64_t  key,
       clonedObj.mrp(cl->dest_cb).mp()->white_next = cl->white_list;
       cl->white_list = objOID.id();
     }
-
-    DEBUG_ONLY(cb_region_align_cursor(&(cl->dest_cb), cl->dest_region, objtablelayer_insertion_alignment_get()));
 
     DEBUG_ONLY(cb_offset_t c0b = cb_region_cursor(cl->dest_region));
 
