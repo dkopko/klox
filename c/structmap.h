@@ -63,8 +63,6 @@ entryoffsetof(const structmap_entry *entry) {
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 struct structmap
 {
-  uint64_t               lowest_inserted_key;
-  uint64_t               highest_inserted_key;
   cb_offset_t            root_node_offset;
   unsigned int           node_count_;
   size_t                 total_external_size;
@@ -98,10 +96,15 @@ struct structmap
                                     uint64_t         key) const;
 
   int
+  traverse_node(const struct cb           **cb,
+                structmap_traverse_func_t   func,
+                void                       *closure,
+                const node                 *node) const;
+
+  int
   traverse(const struct cb           **cb,
            structmap_traverse_func_t   func,
            void                       *closure) const;
-
 
   unsigned int
   node_count() const
@@ -198,8 +201,6 @@ template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 void
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::init(structmap_value_size_t sizeof_value)
 {
-  this->lowest_inserted_key = 0;
-  this->highest_inserted_key = 0;
   this->root_node_offset = CB_NULL;
   this->node_count_ = 0;
   this->total_external_size = 0;
@@ -352,12 +353,6 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::insert(struct cb        **cb,
   }
 
 exit_loop:
-  if (this->lowest_inserted_key == 0 || key < this->lowest_inserted_key)
-    this->lowest_inserted_key = key;
-
-  if (key > this->highest_inserted_key)
-    this->highest_inserted_key = key;
-
 #ifndef NDEBUG
   {
     unsigned int post_node_count = this->node_count_;
@@ -429,21 +424,53 @@ structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::would_collide_node_count_slowpath(const 
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
 int
+structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::traverse_node(const struct cb           **cb,
+                                                      structmap_traverse_func_t   func,
+                                                      void                       *closure,
+                                                      const node                 *n) const
+{
+  for (unsigned int i = 0; i < (1 << LEVEL_BITS); ++i) {
+    const struct structmap_entry *entry = &(n->entries[i]);
+    switch (entrytypeof(entry)) {
+      case STRUCTMAP_ENTRY_NODE: {
+        const node *child_node = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(entry));
+        traverse_node(cb, func, closure, child_node);
+        break;
+      }
+
+      case STRUCTMAP_ENTRY_EMPTY:
+        continue;
+
+      case STRUCTMAP_ENTRY_ITEM:
+        func(entrykeyof(entry), entry->value, closure);
+        continue;
+    }
+  }
+
+  return 0;
+}
+
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
+int
 structmap<FIRSTLEVEL_BITS, LEVEL_BITS>::traverse(const struct cb           **cb,
                                                  structmap_traverse_func_t   func,
                                                  void                       *closure) const
 {
-  uint64_t v;
+  for (unsigned int i = 0; i < (1 << FIRSTLEVEL_BITS); ++i) {
+    const struct structmap_entry *entry = &(this->entries[i]);
+    switch (entrytypeof(entry)) {
+      case STRUCTMAP_ENTRY_NODE: {
+        const node *child_node = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(entry));
+        traverse_node(cb, func, closure, child_node);
+        break;
+      }
 
-  //FIXME Improve this traversal, it is only sufficient for a demo, but will
-  // be pretty craptacular when used on a sparse range of keys.
-  for (uint64_t k = this->lowest_inserted_key, e = this->highest_inserted_key;
-       k > 0 && k <= e;
-       ++k)
-  {
-    bool lookup_success = this->lookup(*cb, k, &v);
-    if (lookup_success) {
-      func(k, v, closure);
+      case STRUCTMAP_ENTRY_EMPTY:
+        continue;
+
+      case STRUCTMAP_ENTRY_ITEM:
+        func(entrykeyof(entry), entry->value, closure);
+        continue;
     }
   }
 
