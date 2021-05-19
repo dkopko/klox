@@ -92,13 +92,13 @@ typedef struct sObjClass {
   Obj obj;
   OID<ObjString> name;
   OID<struct sObjClass> superclass;  //struct sObjClass* (only pointer, not array).
-  struct structmap methods_sm;
+  MethodsSM methods_sm;
 } ObjClass;
 
 typedef struct {
   Obj obj;
   OID<ObjClass> klass;
-  struct structmap fields_sm;
+  FieldsSM fields_sm;
 } ObjInstance;
 
 typedef struct {

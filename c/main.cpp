@@ -71,6 +71,10 @@ static void runFile(const char* path) {
 }
 
 int main(int argc, const char* argv[]) {
+  /* Make sure main thread is marked. */
+  on_main_thread = true;
+  can_print      = true;
+
   struct cb_params cb_params = CB_PARAMS_DEFAULT;
   int ret;
 
@@ -110,17 +114,12 @@ int main(int argc, const char* argv[]) {
   }
 
   /* Create thread-local continuous buffer region. */
-  ret = logged_region_create(&thread_cb, &thread_region, 1, 1024, 0);
+  ret = logged_region_create(&thread_cb, &thread_region, 1, 1024 * 1024, 0);
   if (ret != CB_SUCCESS)
   {
       fprintf(stderr, "Could not create region.\n");
       return EXIT_FAILURE;
   }
-
-  /* Make sure main thread is marked. */
-  on_main_thread = true;
-  can_print      = true;
-
 
   /* Initialize CB-based GC. */
   ret = gc_init();

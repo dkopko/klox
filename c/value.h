@@ -29,15 +29,15 @@ typedef enum {
 
 typedef struct { uint64_t val; } Value;
 
-#define IS_BOOL(v)    (((v.val) & (SIGN_BIT | QNAN | TAG_FALSE)) == (QNAN | TAG_FALSE))
-#define IS_NIL(v)     ((v.val) == NIL_VAL.val)
+#define IS_BOOL(v)    ((((v).val) & (SIGN_BIT | QNAN | TAG_FALSE)) == (QNAN | TAG_FALSE))
+#define IS_NIL(v)     (((v).val) == NIL_VAL.val)
 // If the NaN bits are set, it's not a number.
-#define IS_NUMBER(v)  (((v.val) & QNAN) != QNAN)
-#define IS_OBJ(v)     (((v.val) & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT))
+#define IS_NUMBER(v)  ((((v).val) & QNAN) != QNAN)
+#define IS_OBJ(v)     ((((v).val) & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT))
 
-#define AS_BOOL(v)    ((v.val) == TRUE_VAL.val)
+#define AS_BOOL(v)    (((v).val) == TRUE_VAL.val)
 #define AS_NUMBER(v)  valueToNum(v)
-#define AS_OBJ_ID(v)     ((ObjID) { (v.val) & ~(SIGN_BIT | QNAN) })
+#define AS_OBJ_ID(v)     ((ObjID) { ((v).val) & ~(SIGN_BIT | QNAN) })
 #define AS_OBJ(v)     ((Obj*)cb_at_immed(thread_ring_start, thread_ring_mask, objtable_lookup(&thread_objtable, AS_OBJ_ID(v))))
 
 #define BOOL_VAL(boolean) ((Value) { ((boolean) ? TRUE_VAL : FALSE_VAL) })
@@ -52,7 +52,7 @@ typedef struct { uint64_t val; } Value;
 // 3. Or in the bits to make a tagged Nan.
 // 4. Cast to a typedef'd value.
 #define OBJ_VAL(objid) \
-    ((Value) { (SIGN_BIT | QNAN | (uint64_t)(objid.id)) })
+    ((Value) { (SIGN_BIT | QNAN | (uint64_t)((objid).id)) })
 
 // A union to let us reinterpret a double as raw bits and back.
 typedef union {

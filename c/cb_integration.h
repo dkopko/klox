@@ -8,7 +8,7 @@
 #include <cb_region.h>
 #include <cb_term.h>
 
-#include "structmap.h"
+#include "structmap_amt.h"
 #include "trace.h"
 
 // VM thread state.
@@ -22,6 +22,9 @@ extern __thread cb_offset_t       pinned_lower_bound;
 extern __thread bool              on_main_thread;
 extern __thread bool              can_print;
 extern __thread unsigned int      gc_integration_epoch;
+extern __thread cb_offset_t       thread_objtable_lower_bound;
+extern __thread unsigned int      addl_collision_nodes;
+extern __thread unsigned int      snap_addl_collision_nodes;
 
 // GC thread state.
 //FIXME make these to gc-thread-local.
@@ -42,6 +45,14 @@ extern bool is_resizing;
 #define ALREADY_WHITE_FLAG ((cb_offset_t)1)
 #define ALREADY_WHITE(OFFSET) !!((OFFSET) & ALREADY_WHITE_FLAG)
 #define PURE_OFFSET(OFFSET) ((OFFSET) & ~ALREADY_WHITE_FLAG)
+
+static const int OBJTABLELAYER_FIRSTLEVEL_BITS = 10;
+static const int FIELDS_FIRSTLEVEL_BITS = 0;
+static const int METHODS_FIRSTLEVEL_BITS = 0;
+
+typedef structmap_amt<9, 5> ObjTableSM;
+typedef structmap_amt<0, 5> MethodsSM;
+typedef structmap_amt<0, 5> FieldsSM;
 
 #if NDEBUG
 #define DEBUG_ONLY(x)
@@ -108,6 +119,10 @@ struct cbp
   {
     assert((offset_ == CB_NULL && pointer_ == NULL) || pointer_ == cb_at(cb_, offset_));
   }
+
+  bool is_nil() {
+    return !pointer_;
+  }
 };
 
 template<typename T>
@@ -120,6 +135,8 @@ struct CBP : cbp
   CBP(cb_offset_t offset, struct cb *cb) : cbp(offset, cb) { }
 
   CBP(CBP<T> const &rhs) : cbp(rhs) { }
+
+  CBP<T>& operator=(const CBP<T> &rhs) = default;
 
   const T* cp() {
     return static_cast<const T*>(pointer_);
@@ -234,16 +251,59 @@ struct CBO
 
 typedef struct { uint64_t id; } ObjID;
 
+typedef struct ObjTableLayer {
+  ObjTableSM sm;
+} ObjTableLayer;
+
 typedef struct ObjTable {
-  struct structmap sm_a;
-  struct structmap sm_b;
-  struct structmap sm_c;
-  ObjID next_obj_id;
+  ObjTableLayer a;
+  ObjTableLayer b;
+  ObjTableLayer c;
+  ObjID         next_obj_id;
 } ObjTable;
 
-int objtable_layer_init(struct structmap *sm);
-int methods_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm);
-int fields_layer_init(struct cb **cb, struct cb_region *region, struct structmap *sm);
+int objtablelayer_init(ObjTableLayer *layer);
+int objtablelayer_assign(ObjTableLayer *dest, ObjTableLayer *src);
+
+typedef int (*objtablelayer_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
+int objtablelayer_traverse(const struct cb                **cb,
+                           ObjTableLayer                   *layer,
+                           objtablelayer_traverse_func_t   func,
+                           void                            *closure);
+
+size_t objtablelayer_external_size(ObjTableLayer *layer);
+size_t objtablelayer_internal_size(ObjTableLayer *layer);
+size_t objtablelayer_size(ObjTableLayer *layer);
+void objtablelayer_external_size_adjust(ObjTableLayer *layer, ssize_t adjustment);
+// NOTE: The following is used to pre-align a region's cursor before an
+// objtablelayer_insert() in copy_objtable_b() and copy_objtable_c_not_in_b()
+// for the sake of accurately tracking in Debug builds how much of the region is
+// being consumed by that insertion.
+extern inline size_t objtablelayer_insertion_alignment_get() { return 8; }
+
+
+extern inline int
+objtablelayer_insert(struct cb        **cb,
+                     struct cb_region  *region,
+                     ObjTableLayer     *layer,
+                     uint64_t           key,
+                     uint64_t           value)
+{
+  return layer->sm.insert(cb, region, key, value);
+}
+
+extern inline bool
+objtablelayer_lookup(const struct cb *cb,
+                     ObjTableLayer   *layer,
+                     uint64_t         key,
+                     uint64_t        *value)
+{
+  return (layer->sm.lookup(cb, key, value) && *value != CB_NULL);
+}
+
+
+int methods_layer_init(struct cb **cb, struct cb_region *region, MethodsSM *sm);
+int fields_layer_init(struct cb **cb, struct cb_region *region, FieldsSM *sm);
 
 void objtable_init(ObjTable *obj_table);
 void objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset);
@@ -253,6 +313,9 @@ cb_offset_t objtable_lookup_A(ObjTable *obj_table, ObjID obj_id);
 cb_offset_t objtable_lookup_B(ObjTable *obj_table, ObjID obj_id);
 cb_offset_t objtable_lookup_C(ObjTable *obj_table, ObjID obj_id);
 void objtable_invalidate(ObjTable *obj_table, ObjID obj_id);
+void objtable_external_size_adjust_A(ObjTable *obj_table, ssize_t adjustment);
+void objtable_freeze(ObjTable *obj_table);
+size_t objtable_consolidation_size(ObjTable *obj_table);
 
 
 #define CB_NULL_OID ((ObjID) { 0 })
@@ -406,8 +469,8 @@ struct gc_request
 
   //Objtable
   struct cb_region  objtable_new_region;
-  struct structmap  objtable_sm_b;
-  struct structmap  objtable_sm_c;
+  ObjTableLayer     objtable_b;
+  ObjTableLayer     objtable_c;
 
   //Tristack
   struct cb_region  tristack_new_region;
@@ -450,7 +513,7 @@ struct gc_request
 
 struct gc_response
 {
-  struct structmap  objtable_new_sm_b;
+  ObjTableLayer objtable_new_b;
 
   cb_offset_t  tristack_new_bbo; // B base offset
   unsigned int tristack_new_bbi; // B base index (always 0, really)

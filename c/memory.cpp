@@ -289,15 +289,25 @@ structmapTraversalGray(uint64_t k, uint64_t v, void *closure)
   return 0;
 }
 
-static void grayStructmap(const struct structmap *sm) {
+static void grayMethodsStructmap(const MethodsSM *sm) {
   int ret;
 
   (void)ret;
 
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           sm,
-                           &structmapTraversalGray,
-                           NULL);
+  ret = sm->traverse((const struct cb **)&thread_cb,
+                     &structmapTraversalGray,
+                     NULL);
+  assert(ret == 0);
+}
+
+static void grayFieldsStructmap(const FieldsSM *sm) {
+  int ret;
+
+  (void)ret;
+
+  ret = sm->traverse((const struct cb **)&thread_cb,
+                     &structmapTraversalGray,
+                     NULL);
   assert(ret == 0);
 }
 
@@ -331,7 +341,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
       const ObjClass* klass = (const ObjClass*)object;
       grayObject(klass->name.id());
       grayObject(klass->superclass.id());
-      grayStructmap(&(klass->methods_sm));
+      grayMethodsStructmap(&(klass->methods_sm));
 
       //NOTE: Classes are represented by ObjClass layers.  The garbage
       // collector only deals with regions B and C.  If retrieval of the
@@ -341,7 +351,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
         const ObjClass* klass_C = (const ObjClass*)objectOID.clipC().cp();
         if (klass_C) {
           KLOX_TRACE("found backing class for #%ju\n", objectOID.id().id);
-          grayStructmap(&(klass_C->methods_sm));
+          grayMethodsStructmap(&(klass_C->methods_sm));
         }
       }
       break;
@@ -368,7 +378,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
     case OBJ_INSTANCE: {
       const ObjInstance* instance = (const ObjInstance*)object;
       grayObject(instance->klass.id());
-      grayStructmap(&(instance->fields_sm));
+      grayFieldsStructmap(&(instance->fields_sm));
 
       //NOTE: Instances are represented by ObjInstance layers.  The garbage
       // collector only deals with regions B and C.  If retrieval of the
@@ -378,7 +388,7 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
         const ObjInstance* instance_C = (const ObjInstance*)objectOID.clipC().cp();
         if (instance_C) {
           KLOX_TRACE("found backing instance for #%ju\n", objectOID.id().id);
-          grayStructmap(&(instance_C->fields_sm));
+          grayFieldsStructmap(&(instance_C->fields_sm));
         }
       }
       break;
@@ -520,6 +530,7 @@ cb_offset_t deriveMutableObjectLayer(struct cb **cb, struct cb_region *region, O
       //NOTE: We expect lookup of fields to first check this new, mutable,
       //  A-region ObjClass, before looking at older versions in B and C.
       fields_layer_init(cb, region, &(dest->fields_sm));
+
       break;
     }
 
@@ -611,33 +622,65 @@ copy_entry_to_bst(const struct cb_term *key_term,
   return 0;
 }
 
-struct copy_sm_entry_closure
+struct copy_MethodsSM_entry_closure
 {
   struct cb        **dest_cb;
   struct cb_region  *dest_region;
-  struct structmap  *dest_sm;
+  MethodsSM         *dest_sm;
   DEBUG_ONLY(size_t  last_sm_size);
 };
 
 static int
-copy_entry_to_sm(uint64_t k, uint64_t v, void *closure)
+copy_MethodsSM_entry(uint64_t k, uint64_t v, void *closure)
 {
-  struct copy_sm_entry_closure *cl = (struct copy_sm_entry_closure *)closure;
+  struct copy_MethodsSM_entry_closure *cl = (struct copy_MethodsSM_entry_closure *)closure;
   int ret;
 
   (void)ret;
 
   DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
 
-  ret = structmap_insert(cl->dest_cb,
-                         cl->dest_region,
-                         cl->dest_sm,
-                         k,
-                         v);
+  ret = cl->dest_sm->insert(cl->dest_cb,
+                            cl->dest_region,
+                            k,
+                            v);
+  assert(ret == 0);
 
+  DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
+  DEBUG_ONLY(size_t      sm_size = cl->dest_sm->size());
+
+  // Actual bytes used must be <= structmap's self-considered growth.
+  assert(c1 - c0 <= sm_size - cl->last_sm_size);
+  DEBUG_ONLY(cl->last_sm_size = sm_size);
+
+  return 0;
+}
+
+struct copy_FieldsSM_entry_closure
+{
+  struct cb        **dest_cb;
+  struct cb_region  *dest_region;
+  FieldsSM          *dest_sm;
+  DEBUG_ONLY(size_t  last_sm_size);
+};
+
+static int
+copy_FieldsSM_entry(uint64_t k, uint64_t v, void *closure)
+{
+  struct copy_FieldsSM_entry_closure *cl = (struct copy_FieldsSM_entry_closure *)closure;
+  int ret;
+
+  (void)ret;
+
+  DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
+
+  ret = cl->dest_sm->insert(cl->dest_cb,
+                            cl->dest_region,
+                            k,
+                            v);
   assert(ret == 0);
   DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
-  DEBUG_ONLY(size_t      sm_size = structmap_size(cl->dest_sm));
+  DEBUG_ONLY(size_t      sm_size = cl->dest_sm->size());
 
   // Actual bytes used must be <= structmap's self-considered growth.
   assert(c1 - c0 <= sm_size - cl->last_sm_size);
@@ -666,17 +709,16 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
     case OBJ_CLASS: {
       ObjClass *srcClass = (ObjClass *)srcCBO.crp(*cb).cp();  //cb-resize-safe (GC preallocated space)
       ObjClass *destClass = (ObjClass *)cloneCBO.crp(*cb).cp();  //cb-resize-safe (GC prealloated space)
-      struct copy_sm_entry_closure cl = {
+      struct copy_MethodsSM_entry_closure cl = {
         .dest_cb = cb,
         .dest_region = region,
         .dest_sm = &(destClass->methods_sm),
-        DEBUG_ONLY(cl.last_sm_size = structmap_size(&(destClass->methods_sm)))
+        DEBUG_ONLY(cl.last_sm_size = destClass->methods_sm.size())
       };
 
-      ret = structmap_traverse((const struct cb **)cb,
-                               &(srcClass->methods_sm),
-                               copy_entry_to_sm,
-                               &cl);
+      ret = srcClass->methods_sm.traverse((const struct cb **)cb,
+                                          copy_MethodsSM_entry,
+                                          &cl);
       assert(ret == 0);
     }
     break;
@@ -684,17 +726,16 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
     case OBJ_INSTANCE: {
       ObjInstance *srcInstance = (ObjInstance *)srcCBO.crp(*cb).cp();  //cb-resize-safe (GC preallocated space)
       ObjInstance *destInstance = (ObjInstance *)cloneCBO.crp(*cb).cp();  //cb-resize-safe (GC preallocated space)
-      struct copy_sm_entry_closure cl = {
+      struct copy_FieldsSM_entry_closure cl = {
         .dest_cb = cb,
         .dest_region = region,
         .dest_sm = &(destInstance->fields_sm),
-        DEBUG_ONLY(cl.last_sm_size = structmap_size(&(destInstance->fields_sm)))
+        DEBUG_ONLY(cl.last_sm_size = destInstance->fields_sm.size())
       };
 
-      ret = structmap_traverse((const struct cb **)cb,
-                               &(srcInstance->fields_sm),
-                               copy_entry_to_sm,
-                               &cl);
+      ret = srcInstance->fields_sm.traverse((const struct cb **)cb,
+                                            copy_FieldsSM_entry,
+                                            &cl);
       assert(ret == 0);
     }
     break;
@@ -714,10 +755,7 @@ void freezeARegions(cb_offset_t new_lower_bound) {
   assert(on_main_thread);
 
   // Objtable
-  //assert(cb_bst_num_entries(thread_cb, thread_objtable.root_c) == 0); //FIXME restore this check
-  thread_objtable.sm_c = thread_objtable.sm_b;
-  thread_objtable.sm_b = thread_objtable.sm_a;
-  objtable_layer_init(&(thread_objtable.sm_a));
+  objtable_freeze(&thread_objtable);
 
   // Tristack
   assert(vm.tristack.cbo == CB_NULL);
@@ -731,6 +769,7 @@ void freezeARegions(cb_offset_t new_lower_bound) {
                            &(vm.tristack.abo),
                            cb_alignof(Value),
                            sizeof(Value) * STACK_MAX);
+  assert(ret == CB_SUCCESS);
   vm.tristack.abi = vm.tristack.stackDepth;
   assert(vm.tristack.abo >= new_lower_bound);
   tristack_recache(&(vm.tristack), thread_cb);
@@ -747,6 +786,7 @@ void freezeARegions(cb_offset_t new_lower_bound) {
                            &(vm.triframes.abo),
                            cb_alignof(CallFrame),
                            sizeof(CallFrame) * FRAMES_MAX);
+  assert(ret == CB_SUCCESS);
   vm.triframes.abi = vm.triframes.frameCount;
   assert(vm.triframes.abo >= new_lower_bound);
   triframes_recache(&(vm.triframes), thread_cb);
@@ -785,19 +825,25 @@ void freezeARegions(cb_offset_t new_lower_bound) {
   assert(vm.globals.root_a >= new_lower_bound);
 }
 
+
+struct print_objtable_closure
+{
+  const char  *desc;
+};
+
 static int
 printObjtableTraversal(uint64_t  key,
                        uint64_t  val,
                        void     *closure)
 {
-  const char *desc = (const char *)closure;
+  struct print_objtable_closure *poc = (struct print_objtable_closure *)closure;
   ObjID objID = { .id = key };
   cb_offset_t offset = (cb_offset_t)val;
 
-  (void)desc, (void)objID, (void)offset;
+  (void)poc, (void)objID, (void)offset;
 
   KLOX_TRACE("%s #%ju -> @%ju\n",
-             desc,
+             poc->desc,
              (uintmax_t)objID.id,
              (uintmax_t)offset);
 
@@ -812,27 +858,36 @@ void printStateOfWorld(const char *desc) {
   KLOX_TRACE("===== BEGIN STATE OF WORLD %s (gc: %u) =====\n", desc, gc_integration_epoch);
 
   KLOX_TRACE("----- begin objtable (a:%ju, asz:%zu, b:%ju, bsz:%zu, c:%ju, csz:%zu)-----\n",
-             thread_objtable.sm_a.root_node_offset,
-             structmap_size(&(thread_objtable.sm_a)),
-             thread_objtable.sm_b.root_node_offset,
-             structmap_size(&(thread_objtable.sm_b)),
-             thread_objtable.sm_c.root_node_offset,
-             structmap_size(&(thread_objtable.sm_c)));
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           &(thread_objtable.sm_a),
-                           &printObjtableTraversal,
-                           (void*)"A");
+             thread_objtable.a.sm.root_node_offset,
+             objtablelayer_size(&(thread_objtable.a)),
+             thread_objtable.b.sm.root_node_offset,
+             objtablelayer_size(&(thread_objtable.b)),
+             thread_objtable.c.sm.root_node_offset,
+             objtablelayer_size(&(thread_objtable.c)));
+
+  struct print_objtable_closure poc;
+
+  poc.desc = "A";
+  ret = objtablelayer_traverse((const struct cb **)&thread_cb,
+                               &(thread_objtable.a),
+                               &printObjtableTraversal,
+                               &poc);
   assert(ret == 0);
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           &(thread_objtable.sm_b),
-                           &printObjtableTraversal,
-                           (void*)"B");
+
+  poc.desc = "B";
+  ret = objtablelayer_traverse((const struct cb **)&thread_cb,
+                               &(thread_objtable.b),
+                               &printObjtableTraversal,
+                               &poc);
   assert(ret == 0);
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           &(thread_objtable.sm_c),
-                           &printObjtableTraversal,
-                           (void*)"C");
+
+  poc.desc = "C";
+  ret = objtablelayer_traverse((const struct cb **)&thread_cb,
+                               &(thread_objtable.c),
+                               &printObjtableTraversal,
+                               &poc);
   assert(ret == 0);
+
   KLOX_TRACE("----- end objtable -----\n");
 
   KLOX_TRACE("----- begin vm.strings -----\n");
@@ -1019,7 +1074,7 @@ void collectGarbage() {
   // presently-in-flight allocation (as of this writing, always the case), we
   // would want it to complete at a higher offset than new_lower_bound.  We also
   // want all of the new A regions to also be beyond new_lower_bound.
-  ret = logged_region_create(&thread_cb, &thread_region, 1, 1024, 0);
+  ret = logged_region_create(&thread_cb, &thread_region, 1, 1024 * 1024, 0);
 
   exec_phase = EXEC_PHASE_FREEZE_A_REGIONS;
   freezeARegions(new_lower_bound);
@@ -1037,20 +1092,16 @@ void collectGarbage() {
   rr.mp()->req.exec_phase                = exec_phase;
 
   // Prepare condensing objtable B+C
-  size_t objtable_b_size = structmap_size(&(thread_objtable.sm_b)) + structmap_modification_size();
-  size_t objtable_c_size = structmap_size(&(thread_objtable.sm_c)) + structmap_modification_size();
-  KLOX_TRACE("objtable_b_size: %zu, objtable_c_size: %zu\n",
-         objtable_b_size, objtable_c_size);
   ret = logged_region_create(&thread_cb,
                              &tmp_region,
                              pagesize,
-                             objtable_b_size + objtable_c_size,
+                             objtable_consolidation_size(&thread_objtable),
                              CB_REGION_FINAL);
   assert(ret == 0);
   rr.mp()->req.objtable_new_region = tmp_region;
   assert(cb_region_start(&(rr.cp()->req.objtable_new_region)) >= new_lower_bound);
-  rr.mp()->req.objtable_sm_b = thread_objtable.sm_b;
-  rr.mp()->req.objtable_sm_c = thread_objtable.sm_c;
+  objtablelayer_assign(&(rr.mp()->req.objtable_b), &(thread_objtable.b));
+  objtablelayer_assign(&(rr.mp()->req.objtable_c), &(thread_objtable.c));
 
   // Prepare condensing tristack B+C
   size_t tristack_b_plus_c_size = sizeof(Value) * (vm.tristack.abi - vm.tristack.cbi);
@@ -1224,12 +1275,13 @@ void integrateGCResponse(struct gc_request_response *rr) {
   }
 
   //Integrate condensed objtable.
-  KLOX_TRACE("objtable C %ju -> %ju\n", (uintmax_t)thread_objtable.sm_c.root_node_offset, (uintmax_t)0);
-  KLOX_TRACE("objtable B %ju -> %ju\n", (uintmax_t)thread_objtable.sm_b.root_node_offset, (uintmax_t)rr->resp.objtable_new_sm_b.root_node_offset);
-  objtable_layer_init(&(thread_objtable.sm_c));
-  thread_objtable.sm_b = rr->resp.objtable_new_sm_b;
-  assert(thread_objtable.sm_b.root_node_offset == CB_NULL || thread_objtable.sm_b.root_node_offset >= rr->req.new_lower_bound);
-  assert(thread_objtable.sm_a.root_node_offset == CB_NULL || thread_objtable.sm_a.root_node_offset >= rr->req.new_lower_bound);
+  KLOX_TRACE("objtable C %ju -> %ju\n", (uintmax_t)thread_objtable.c.sm.root_node_offset, (uintmax_t)0);
+  KLOX_TRACE("objtable B %ju -> %ju\n", (uintmax_t)thread_objtable.b.sm.root_node_offset, (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
+  objtablelayer_init(&(thread_objtable.c));
+  objtablelayer_assign(&(thread_objtable.b), &(rr->resp.objtable_new_b));
+  thread_objtable_lower_bound = cb_region_start(&(rr->req.objtable_new_region));
+  assert(thread_objtable.b.sm.root_node_offset == CB_NULL || thread_objtable.b.sm.root_node_offset >= rr->req.new_lower_bound);
+  assert(thread_objtable.a.sm.root_node_offset == CB_NULL || thread_objtable.a.sm.root_node_offset >= rr->req.new_lower_bound);
 
   //Integrate condensed tristack.
   KLOX_TRACE("before condensing tristack\n");
@@ -1322,7 +1374,7 @@ void integrateGCResponse(struct gc_request_response *rr) {
   if (advance_len > 0) {
     //Clobber old contents.
 #ifdef DEBUG_TRACE_GC
-    KLOX_TRACE("clobbering range [%ju,%ju) of cb %p (size: %ju, start: %ju, end: %ju)\n",
+    KLOX_TRACE("clobbering range [%ju,%ju) of cb %p (size: %ju, start: %ju, cursor: %ju)\n",
                (uintmax_t)cb_start(thread_cb),
                (uintmax_t)rr->req.new_lower_bound,
                thread_cb,

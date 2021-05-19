@@ -441,9 +441,9 @@ static bool instanceFieldGet(OID<ObjInstance> instance, Value key, Value *value)
   uint64_t k = AS_OBJ_ID(key).id;
   uint64_t v;
 
-  if (((inst = instance.clipA().cp()) && structmap_lookup(thread_cb, &(inst->fields_sm), k, &v))
-      || ((inst = instance.clipB().cp()) && structmap_lookup(thread_cb, &(inst->fields_sm), k, &v))
-      || ((inst = instance.clipC().cp()) && structmap_lookup(thread_cb, &(inst->fields_sm), k, &v)))
+  if (((inst = instance.clipA().cp()) && inst->fields_sm.lookup(thread_cb, k, &v))
+      || ((inst = instance.clipB().cp()) && inst->fields_sm.lookup(thread_cb, k, &v))
+      || ((inst = instance.clipC().cp()) && inst->fields_sm.lookup(thread_cb, k, &v)))
   {
     value->val = v;
     return true;
@@ -455,7 +455,10 @@ static bool instanceFieldGet(OID<ObjInstance> instance, Value key, Value *value)
 static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) {
   assert(IS_OBJ(key));
 
-  RCBP<ObjInstance> instanceA = instance.mlip(); //FIXME this is safe over resizes, but is it safe over potential GCs caused by allocations below??
+  //FIXME These RCBP's are safe over resizes, but are they safe over potential GCs caused by allocations below?
+  RCBP<ObjInstance> instanceA = instance.mlip();
+  RCBP<ObjInstance> instanceB = instance.clipB();
+  RCBP<ObjInstance> instanceC = instance.clipC();
   uint64_t k = AS_OBJ_ID(key).id;
   uint64_t v = value.val;  //BIG FIXME - structmap won't handle double encodings of 0x0 and 0x1.
   int ret;
@@ -466,43 +469,57 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   // oversize the objtable, as the update of the size of the fields_sm this
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  FieldsSM::MODIFICATION_MAX_SIZE));
 
-  size_t size_before = structmap_size(&(instanceA.cp()->fields_sm));
+  size_t size_before = instanceA.cp()->fields_sm.size();
+  unsigned int nodes_before = instanceA.cp()->fields_sm.node_count();  //FIXME AMTSHL
 
-  struct structmap fields_sm = instanceA.mp()->fields_sm;
+  FieldsSM fields_sm = instanceA.mp()->fields_sm;
 
-  ret = structmap_insert(&thread_cb,
+  ret = fields_sm.insert(&thread_cb,
                          &thread_region,
-                         &fields_sm,
                          k,
                          v);
   assert(ret == 0);
 
   instanceA.mp()->fields_sm = fields_sm;
 
-  size_t size_after = structmap_size(&(instanceA.cp()->fields_sm));
+  size_t size_after = instanceA.cp()->fields_sm.size();
+  unsigned int nodes_after = instanceA.cp()->fields_sm.node_count();  //FIXME AMTSHL
 
   //NOTE: Because this field addition is done to an ObjInstance already present
   // in the objtable, we must manually inform the objtable of this independent
   // mutation of external size.
-  structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                 (ssize_t)size_after - (ssize_t)size_before);
+  objtable_external_size_adjust_A(&thread_objtable,
+                                  (ssize_t)size_after - (ssize_t)size_before);
 
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 - (ssize_t)structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  - (ssize_t)FieldsSM::MODIFICATION_MAX_SIZE));
 
+  //Account for future structmap enlargement on merge due to slot collisions. FIXME AMTSHL
+  assert(nodes_after >= nodes_before);
+  unsigned int delta_node_count = nodes_after - nodes_before;
+  unsigned int b_collide_node_count = (instanceB.is_nil() ? 0 :
+    instanceB.cp()->fields_sm.would_collide_node_count(thread_cb, k));
+  unsigned int c_collide_node_count = (instanceC.is_nil() ? 0 :
+    instanceC.cp()->fields_sm.would_collide_node_count(thread_cb, k));
+  unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count: c_collide_node_count);
+  if (max_collide_node_count > delta_node_count) {
+    unsigned int addl_node_count = max_collide_node_count - delta_node_count;
+    KLOX_TRACE("Need addl_nodes (instance): %ju\n", (uintmax_t)addl_node_count);
+    addl_collision_nodes += addl_node_count;
+  }
 }
 
 static bool classMethodGet(OID<ObjClass> klass, Value key, Value *value) {
-  const ObjClass *c;  //cb-resize-safe (no allocations in lifetime)
+  const ObjClass *clazz;  //cb-resize-safe (no allocations in lifetime)
   uint64_t k = AS_OBJ_ID(key).id;
   uint64_t v;
 
-  if (((c = klass.clipA().cp()) && structmap_lookup(thread_cb, &(c->methods_sm), k, &v))
-      || ((c = klass.clipB().cp()) && structmap_lookup(thread_cb, &(c->methods_sm), k, &v))
-      || ((c = klass.clipC().cp()) && structmap_lookup(thread_cb, &(c->methods_sm), k, &v)))
+  if (((clazz = klass.clipA().cp()) && clazz->methods_sm.lookup(thread_cb, k, &v))
+      || ((clazz = klass.clipB().cp()) && clazz->methods_sm.lookup(thread_cb, k, &v))
+      || ((clazz = klass.clipC().cp()) && clazz->methods_sm.lookup(thread_cb, k, &v)))
   {
     value->val = v;
     return true;
@@ -515,7 +532,10 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   assert(IS_OBJ(key));
   assert(IS_OBJ(value));
 
-  RCBP<ObjClass> classA = klass.mlip(); //FIXME this is safe over resizes, but is it safe over potential GCs caused by allocations below??
+  //FIXME These RCBP's are safe over resizes, but are they safe over potential GCs caused by allocations below?
+  RCBP<ObjClass> classA = klass.mlip();
+  RCBP<ObjClass> classB = klass.clipB();
+  RCBP<ObjClass> classC = klass.clipC();
   uint64_t k = AS_OBJ_ID(key).id;
   uint64_t v = value.val;  //BIG FIXME - structmap won't handle double encodings of 0x0 and 0x1.
   int ret;
@@ -526,38 +546,53 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   // oversize the objtable, as the update of the size of the methods_bst this
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  MethodsSM::MODIFICATION_MAX_SIZE));
 
-  size_t size_before = structmap_size(&(classA.cp()->methods_sm));
+  size_t size_before = classA.cp()->methods_sm.size();
+  size_t nodes_before = classA.cp()->methods_sm.node_count();  //FIXME AMTSHL
 
-  struct structmap methods_sm = classA.mp()->methods_sm;
+  MethodsSM methods_sm = classA.mp()->methods_sm;
 
-  ret = structmap_insert(&thread_cb,
-                         &thread_region,
-                         &methods_sm,
-                         k,
-                         v);
+  ret = methods_sm.insert(&thread_cb,
+                          &thread_region,
+                          k,
+                          v);
   assert(ret == 0);
 
   classA.mp()->methods_sm = methods_sm;
 
-  size_t size_after = structmap_size(&(classA.cp()->methods_sm));
+  size_t size_after = classA.cp()->methods_sm.size();
+  size_t nodes_after = classA.cp()->methods_sm.node_count();
 
   //NOTE: Because this method addition is done to an ObjClass already present
   // in the objtable, we must manually inform the objtable of this independent
   // mutation of external size.
-  structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                 size_after - size_before);
+  objtable_external_size_adjust_A(&thread_objtable,
+                                  size_after - size_before);
 
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 - (ssize_t)structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  - (ssize_t)MethodsSM::MODIFICATION_MAX_SIZE));
+
+  //Account for future structmap enlargement on merge due to slot collisions. FIXME AMTSHL
+  assert(nodes_after >= nodes_before);
+  unsigned int delta_node_count = nodes_after - nodes_before;
+  unsigned int b_collide_node_count = (classB.is_nil() ? 0 :
+    classB.cp()->methods_sm.would_collide_node_count(thread_cb, k));
+  unsigned int c_collide_node_count = (classC.is_nil() ? 0 :
+    classC.cp()->methods_sm.would_collide_node_count(thread_cb, k));
+  unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count : c_collide_node_count);
+  if (max_collide_node_count > delta_node_count) {
+    unsigned int addl_node_count = max_collide_node_count - delta_node_count;
+    KLOX_TRACE("Need addl_nodes (class): %ju\n", (uintmax_t)addl_node_count);
+    addl_collision_nodes += addl_node_count;
+  }
 }
 
 static int
-structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
+structmapTraversalMethodsAdd(uint64_t k, uint64_t v, void *closure)
 {
-  struct structmap *dest_sm = (struct structmap *)closure;
+  MethodsSM *dest_sm = (MethodsSM *)closure;
   int ret;
 
   (void)ret;
@@ -566,24 +601,23 @@ structmapTraversalAdd(uint64_t k, uint64_t v, void *closure)
   // oversize the objtable, as the update of the size of the methods bst this
   // traversal is used for is not atomic w.r.t. the update of the size of the
   // objtable which contains it.
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  MethodsSM::MODIFICATION_MAX_SIZE));
 
-  size_t size_before = structmap_size(dest_sm);
+  size_t size_before = dest_sm->size();
 
-  ret = structmap_insert(&thread_cb,
-                         &thread_region,
-                         dest_sm,
-                         k,
-                         v);
+  ret = dest_sm->insert(&thread_cb,
+                        &thread_region,
+                        k,
+                        v);
   assert(ret == 0);
 
-  size_t size_after = structmap_size(dest_sm);
-  structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                 (ssize_t)size_after - (ssize_t)size_before);
+  size_t size_after = dest_sm->size();
+  objtable_external_size_adjust_A(&thread_objtable,
+                                  (ssize_t)size_after - (ssize_t)size_before);
 
-  KLOX_TRACE_ONLY(structmap_external_size_adjust(&(thread_objtable.sm_a),
-                                                 - (ssize_t)structmap_modification_size()));
+  KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
+                                                  - (ssize_t)MethodsSM::MODIFICATION_MAX_SIZE));
   return 0;
 }
 
@@ -591,16 +625,15 @@ static void classMethodsAddAll(OID<ObjClass> subclassOID, OID<ObjClass> supercla
   //FIXME this method used to have a resize-under-traversal issue which may still exist for bst traversals elsewhere
 
   RCBP<ObjClass> subclass = subclassOID.mlip();
-  struct structmap superclass_methods_sm_tmp = superclassOID.clip().cp()->methods_sm;
-  struct structmap subclass_methods_sm_tmp = subclass.cp()->methods_sm;
+  MethodsSM superclass_methods_sm_tmp = superclassOID.clip().cp()->methods_sm;
+  MethodsSM subclass_methods_sm_tmp = subclass.cp()->methods_sm;
   int ret;
 
   (void)ret;
 
-  ret = structmap_traverse((const struct cb **)&thread_cb,
-                           &superclass_methods_sm_tmp,
-                           &structmapTraversalAdd,
-                           &subclass_methods_sm_tmp);
+  ret = superclass_methods_sm_tmp.traverse((const struct cb **)&thread_cb,
+                                           &structmapTraversalMethodsAdd,
+                                           &subclass_methods_sm_tmp);
   assert(ret == 0);
 
   subclass.mp()->methods_sm = subclass_methods_sm_tmp;
