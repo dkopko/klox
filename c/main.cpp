@@ -92,10 +92,7 @@ int main(int argc, const char* argv[]) {
   uintmax_t ring_size = 1 << 12;  //Start very small by default, 1 page = 4096 bytes
   if (getenv("KLOX_RING_SIZE")) sscanf(getenv("KLOX_RING_SIZE"), "%ju", &ring_size);
   cb_params.ring_size = (size_t)ring_size;
-  //cb_params.mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE; //FIXME doesn't work (klox_debug suite failures)
-  //cb_params.mmap_flags = MAP_PRIVATE | MAP_POPULATE; //FIXME doesn't work (klox_debug suite failures)
-  //cb_params.mmap_flags = MAP_SHARED | MAP_ANONYMOUS | MAP_POPULATE; //FIXME doesn't work (klox_debug suite failures)
-  cb_params.mmap_flags = MAP_SHARED | MAP_POPULATE;
+  cb_params.mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE;
   cb_params.flags |= CB_PARAMS_F_MLOCK;
   cb_params.on_resize = &klox_on_cb_resize;
   thread_cb = cb_create(&cb_params, sizeof(cb_params));
