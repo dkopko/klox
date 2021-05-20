@@ -1217,8 +1217,9 @@ void collectGarbage() {
 
     //Send in a copy of the response, because integration causes allocation
     //which can lead to clobbering of the old CB which contains rr_returned.
-    struct gc_request_response rr_copied = *rr_returned;
-    integrateGCResponse(&rr_copied);
+    static __thread struct gc_request_response thread_rr_copied;  //thread-local because too large for stack
+    thread_rr_copied = *rr_returned;
+    integrateGCResponse(&thread_rr_copied);
 
     //Nonetheless, the original pointer handle is still appropriate to use for
     //determining the latest processed gc_request_response.

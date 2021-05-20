@@ -50,7 +50,7 @@ static const int OBJTABLELAYER_FIRSTLEVEL_BITS = 10;
 static const int FIELDS_FIRSTLEVEL_BITS = 0;
 static const int METHODS_FIRSTLEVEL_BITS = 0;
 
-typedef structmap_amt<9, 5> ObjTableSM;
+typedef structmap_amt<19, 5> ObjTableSM;
 typedef structmap_amt<0, 5> MethodsSM;
 typedef structmap_amt<0, 5> FieldsSM;
 

@@ -1730,9 +1730,9 @@ gc_perform(struct gc_request_response *rr)
 
 
     //Create temporary view of what will be the new, consolidated objtable.
-    ObjTable consObjtable;
-    objtable_init(&consObjtable);
-    objtablelayer_assign(&(consObjtable.a), &(rr->resp.objtable_new_b));
+    static __thread ObjTable thread_consObjtable;  //thread-local because too large for stack
+    objtable_init(&thread_consObjtable);
+    objtablelayer_assign(&(thread_consObjtable.a), &(rr->resp.objtable_new_b));
 
     //Copy C section
     while (i < rr->req.triframes_frameCount && i < rr->req.triframes_bbi) {
@@ -1750,7 +1750,7 @@ gc_perform(struct gc_request_response *rr)
 
       // Revise the pointers internal to the CallFrame.
       size_t ip_offset = src->ip - src->ip_root;
-      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &consObjtable).cp();
+      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &thread_consObjtable).cp();
       dest->constantsValuesP = dest->functionP->chunk.constants.values.crp(rr->req.orig_cb).cp();
       dest->ip_root = dest->functionP->chunk.code.crp(rr->req.orig_cb).cp();
       dest->ip = dest->ip_root + ip_offset;
@@ -1774,7 +1774,7 @@ gc_perform(struct gc_request_response *rr)
 
       // Revise the pointers internal to the CallFrame.
       size_t ip_offset = src->ip - src->ip_root;
-      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &consObjtable).cp();
+      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &thread_consObjtable).cp();
       dest->constantsValuesP = dest->functionP->chunk.constants.values.crp(rr->req.orig_cb).cp();
       dest->ip_root = dest->functionP->chunk.code.crp(rr->req.orig_cb).cp();
       dest->ip = dest->ip_root + ip_offset;
