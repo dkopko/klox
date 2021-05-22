@@ -473,7 +473,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
                                                   FieldsSM::MODIFICATION_MAX_SIZE));
 
   size_t size_before = instanceA.cp()->fields_sm.size();
-  unsigned int nodes_before = instanceA.cp()->fields_sm.node_count();  //FIXME AMTSHL
+  unsigned int nodes_before = instanceA.cp()->fields_sm.node_count();
 
   FieldsSM fields_sm = instanceA.mp()->fields_sm;
 
@@ -486,7 +486,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   instanceA.mp()->fields_sm = fields_sm;
 
   size_t size_after = instanceA.cp()->fields_sm.size();
-  unsigned int nodes_after = instanceA.cp()->fields_sm.node_count();  //FIXME AMTSHL
+  unsigned int nodes_after = instanceA.cp()->fields_sm.node_count();
 
   //NOTE: Because this field addition is done to an ObjInstance already present
   // in the objtable, we must manually inform the objtable of this independent
@@ -497,7 +497,7 @@ static void instanceFieldSet(OID<ObjInstance> instance, Value key, Value value) 
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
                                                   - (ssize_t)FieldsSM::MODIFICATION_MAX_SIZE));
 
-  //Account for future structmap enlargement on merge due to slot collisions. FIXME AMTSHL
+  //Account for future structmap enlargement on merge due to slot collisions.
   assert(nodes_after >= nodes_before);
   unsigned int delta_node_count = nodes_after - nodes_before;
   unsigned int b_collide_node_count = (instanceB.is_nil() ? 0 :
@@ -550,7 +550,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
                                                   MethodsSM::MODIFICATION_MAX_SIZE));
 
   size_t size_before = classA.cp()->methods_sm.size();
-  size_t nodes_before = classA.cp()->methods_sm.node_count();  //FIXME AMTSHL
+  size_t nodes_before = classA.cp()->methods_sm.node_count();
 
   MethodsSM methods_sm = classA.mp()->methods_sm;
 
@@ -574,7 +574,7 @@ static void classMethodSet(OID<ObjClass> klass, Value key, Value value) {
   KLOX_TRACE_ONLY(objtable_external_size_adjust_A(&thread_objtable,
                                                   - (ssize_t)MethodsSM::MODIFICATION_MAX_SIZE));
 
-  //Account for future structmap enlargement on merge due to slot collisions. FIXME AMTSHL
+  //Account for future structmap enlargement on merge due to slot collisions.
   assert(nodes_after >= nodes_before);
   unsigned int delta_node_count = nodes_after - nodes_before;
   unsigned int b_collide_node_count = (classB.is_nil() ? 0 :
