@@ -66,8 +66,7 @@ rm -f ilat.out
 ./util/test_testbed_clox.py
 ./benchmark.sh ./testbed/craftinginterpreters/clox
 mv ilat.out ilat.clox.out
-
-KLOX_RING_SIZE=8388608 ./util/test_testbed_klox.py   # Run with sufficient pre-sizing for all tests, to avoid incorporating resize costs.
+KLOX_RING_SIZE=1073741824 ./util/test_testbed_klox.py   # Run with sufficient pre-sizing for all tests, to avoid incorporating resize costs.
 ./benchmark.sh ./testbed/klox/c/BUILD/RelWithDebInfo/klox
 mv ilat.out ilat.klox.out
 

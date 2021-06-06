@@ -30,9 +30,17 @@ typedef int (*structmap_traverse_func_t)(uint64_t key, uint64_t value, void *clo
 
 enum structmap_amt_entry_type
 {
+  //In debug modes, require non-zero enum values to distinguish cases of uninitialized memory.
+  //In release modes, use 0x0 for the node enum for micro-optimization of branches.
+#ifndef NDEBUG
+  STRUCTMAP_AMT_ENTRY_NODE  = 0x1,
+  STRUCTMAP_AMT_ENTRY_EMPTY = 0x2,
+  STRUCTMAP_AMT_ENTRY_ITEM  = 0x3
+#else
   STRUCTMAP_AMT_ENTRY_NODE  = 0x0,
   STRUCTMAP_AMT_ENTRY_EMPTY = 0x1,
   STRUCTMAP_AMT_ENTRY_ITEM  = 0x2
+#endif
 };
 
 static const unsigned int STRUCTMAP_AMT_TYPEMASK = 0x3;
@@ -138,6 +146,17 @@ struct structmap_amt
     return this->internal_size() + this->external_size();
   }
 
+  void
+  validate() const
+  {
+    assert(sizeof_value);
+
+    for (int i = 0; i < (1 << FIRSTLEVEL_BITS); i++) {
+      const struct structmap_amt_entry *entry = &(this->entries[i]);
+      (void)entry;
+      assert(entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_NODE || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_EMPTY || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_ITEM);
+    }
+  }
 
   bool
   lookup(const struct cb *cb,
@@ -146,20 +165,22 @@ struct structmap_amt
   {
     const struct structmap_amt_entry *entry = &(this->entries[key & ((1 << FIRSTLEVEL_BITS) - 1)]);
 
+    assert(entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_NODE || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_EMPTY || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_ITEM);
     if (entry->key_offset_and_type == ((key << 2) | STRUCTMAP_AMT_ENTRY_ITEM)) {
       *value = entry->value;
       return true;
     }
 
     unsigned int key_route_base = FIRSTLEVEL_BITS;
-
     while (entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_NODE) {
         const node *child_node = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(entry));
         unsigned int child_route = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
         entry = &(child_node->entries[child_route]);
+        assert(entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_NODE || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_EMPTY || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_ITEM);
         key_route_base += LEVEL_BITS;
     }
 
+    assert(entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_EMPTY || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_ITEM);
     if (entry->key_offset_and_type == ((key << 2) | STRUCTMAP_AMT_ENTRY_ITEM)) {
       *value = entry->value;
       return true;
@@ -471,6 +492,12 @@ structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::traverse(const struct cb           *
       case STRUCTMAP_AMT_ENTRY_ITEM:
         func(entrykeyof(entry), entry->value, closure);
         continue;
+
+#ifndef NDEBUG
+      default:
+        printf("Bogus structmap entry type: %d\n", entrytypeof(entry));
+        assert(false);
+#endif
     }
   }
 

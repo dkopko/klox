@@ -94,6 +94,7 @@ int main(int argc, const char* argv[]) {
   cb_params.ring_size = (size_t)ring_size;
   cb_params.mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE;
   cb_params.flags |= CB_PARAMS_F_MLOCK;
+  cb_params.on_preresize = &klox_on_cb_preresize;
   cb_params.on_resize = &klox_on_cb_resize;
   thread_cb = cb_create(&cb_params, sizeof(cb_params));
   if (!thread_cb) {

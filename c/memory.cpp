@@ -755,7 +755,7 @@ void freezeARegions(cb_offset_t new_lower_bound) {
   assert(on_main_thread);
 
   // Objtable
-  objtable_freeze(&thread_objtable);
+  objtable_freeze(&thread_objtable, &thread_cb, &thread_region);
 
   // Tristack
   assert(vm.tristack.cbo == CB_NULL);
@@ -858,11 +858,11 @@ void printStateOfWorld(const char *desc) {
   KLOX_TRACE("===== BEGIN STATE OF WORLD %s (gc: %u) =====\n", desc, gc_integration_epoch);
 
   KLOX_TRACE("----- begin objtable (a:%ju, asz:%zu, b:%ju, bsz:%zu, c:%ju, csz:%zu)-----\n",
-             thread_objtable.a.sm.root_node_offset,
+             thread_objtable.a.sm->root_node_offset,
              objtablelayer_size(&(thread_objtable.a)),
-             thread_objtable.b.sm.root_node_offset,
+             thread_objtable.b.sm->root_node_offset,
              objtablelayer_size(&(thread_objtable.b)),
-             thread_objtable.c.sm.root_node_offset,
+             thread_objtable.c.sm->root_node_offset,
              objtablelayer_size(&(thread_objtable.c)));
 
   struct print_objtable_closure poc;
@@ -1092,16 +1092,42 @@ void collectGarbage() {
   rr.mp()->req.exec_phase                = exec_phase;
 
   // Prepare condensing objtable B+C
-  ret = logged_region_create(&thread_cb,
-                             &tmp_region,
-                             pagesize,
-                             objtable_consolidation_size(&thread_objtable),
-                             CB_REGION_FINAL);
-  assert(ret == 0);
-  rr.mp()->req.objtable_new_region = tmp_region;
-  assert(cb_region_start(&(rr.cp()->req.objtable_new_region)) >= new_lower_bound);
-  objtablelayer_assign(&(rr.mp()->req.objtable_b), &(thread_objtable.b));
-  objtablelayer_assign(&(rr.mp()->req.objtable_c), &(thread_objtable.c));
+  {
+    // Create region which will be used for a blank ObjTableLayer.
+    assert(alignof(ObjTableSM) <= (size_t)pagesize);
+    ret = logged_region_create(&thread_cb,
+                               &tmp_region,
+                               pagesize,
+                               sizeof(ObjTableSM),
+                               CB_REGION_FINAL);
+    assert(ret == 0);
+    rr.mp()->req.objtable_blank_region = tmp_region;
+    assert(cb_offset_cmp(cb_region_start(&(rr.cp()->req.objtable_blank_region)), new_lower_bound) >= 0);
+
+    // Create region which will be used for the firstlevel structure of the new-B ObjTableLayer's structmap.
+    ret = logged_region_create(&thread_cb,
+                               &tmp_region,
+                               alignof(ObjTableSM),
+                               sizeof(ObjTableSM),
+                               CB_REGION_FINAL);
+    assert(ret == 0);
+    rr.mp()->req.objtable_firstlevel_new_region = tmp_region;
+    assert(cb_offset_cmp(cb_region_start(&(rr.cp()->req.objtable_firstlevel_new_region)), new_lower_bound) >= 0);
+
+    // Create region which will be used for the contents (nodes and entries) of the new-B ObjTableLayer's structmap.
+    ret = logged_region_create(&thread_cb,
+                               &tmp_region,
+                               1,  //objtable_consolidation_size() pessimizes with worst-case alignment, so no need to provide any here.
+                               objtable_consolidation_size(&thread_objtable),
+                               CB_REGION_FINAL);
+    assert(ret == 0);
+    rr.mp()->req.objtable_new_region = tmp_region;
+    assert(cb_offset_cmp(cb_region_start(&(rr.cp()->req.objtable_new_region)), new_lower_bound) >= 0);
+
+    // Provide the B and C ObjTableLayers which will be consolidated.
+    objtablelayer_assign(&(rr.mp()->req.objtable_b), &(thread_objtable.b));
+    objtablelayer_assign(&(rr.mp()->req.objtable_c), &(thread_objtable.c));
+  }
 
   // Prepare condensing tristack B+C
   size_t tristack_b_plus_c_size = sizeof(Value) * (vm.tristack.abi - vm.tristack.cbi);
@@ -1184,7 +1210,8 @@ void collectGarbage() {
   rr.mp()->req.gc_dest_region_end = gc_end_offset;
 
 #if KLOX_SYNC_GC
-  mprotect_all_except_gc_region(thread_cb, rr_offset, gc_end_offset);
+  //FIXME: Temporarily disabled now that ObjTable is stored within the CB and the PIN_SCOPE of the compilation phase causes huge CBs to be created.
+  //mprotect_all_except_gc_region(thread_cb, rr_offset, gc_end_offset);
 #endif //KLOX_SYNC_GC
 
   rr.mp()->req.orig_cb = thread_cb;  //NOTE: Finally set it just before we send, to ensure we're through all allocations.
@@ -1213,7 +1240,8 @@ void collectGarbage() {
     struct gc_request_response *rr_returned = gc_await_response();
     assert(rr_returned == rr.cp());
     KLOX_TRACE("received GC response with new_lower_bound:%ju, orig_cb:%p\n", (uintmax_t)rr_returned->req.new_lower_bound, rr_returned->req.orig_cb);
-    unmprotect_all(thread_cb);
+    //FIXME: Temporarily disabled now that ObjTable is stored within the CB and the PIN_SCOPE of the compilation phase causes huge CBs to be created.
+    //unmprotect_all(thread_cb);
 
     //Send in a copy of the response, because integration causes allocation
     //which can lead to clobbering of the old CB which contains rr_returned.
@@ -1276,13 +1304,13 @@ void integrateGCResponse(struct gc_request_response *rr) {
   }
 
   //Integrate condensed objtable.
-  KLOX_TRACE("objtable C %ju -> %ju\n", (uintmax_t)thread_objtable.c.sm.root_node_offset, (uintmax_t)0);
-  KLOX_TRACE("objtable B %ju -> %ju\n", (uintmax_t)thread_objtable.b.sm.root_node_offset, (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
-  objtablelayer_init(&(thread_objtable.c));
+  KLOX_TRACE("objtable C %ju -> %ju\n", (uintmax_t)thread_objtable.c.sm->root_node_offset, (uintmax_t)0);
+  KLOX_TRACE("objtable B %ju -> %ju\n", (uintmax_t)thread_objtable.b.sm->root_node_offset, (uintmax_t)rr->resp.objtable_new_b.sm->root_node_offset);
+  objtablelayer_init(&(thread_objtable.c), thread_cb, rr->resp.objtable_blank_firstlevel_offset);
   objtablelayer_assign(&(thread_objtable.b), &(rr->resp.objtable_new_b));
-  thread_objtable_lower_bound = cb_region_start(&(rr->req.objtable_new_region));
-  assert(thread_objtable.b.sm.root_node_offset == CB_NULL || thread_objtable.b.sm.root_node_offset >= rr->req.new_lower_bound);
-  assert(thread_objtable.a.sm.root_node_offset == CB_NULL || thread_objtable.a.sm.root_node_offset >= rr->req.new_lower_bound);
+  thread_objtable_lower_bound = cb_region_start(&(rr->req.objtable_blank_region));
+  assert(thread_objtable.b.sm->root_node_offset == CB_NULL || thread_objtable.b.sm->root_node_offset >= rr->req.new_lower_bound);
+  assert(thread_objtable.a.sm->root_node_offset == CB_NULL || thread_objtable.a.sm->root_node_offset >= rr->req.new_lower_bound);
 
   //Integrate condensed tristack.
   KLOX_TRACE("before condensing tristack\n");
@@ -1335,8 +1363,9 @@ void integrateGCResponse(struct gc_request_response *rr) {
              (uintmax_t)vm.triframes.cbo,
              (uintmax_t)vm.triframes.cbi);
   KLOX_TRACE_ONLY(triframes_print(&(vm.triframes)));
+
+  //Restore the fact that the present frame uses the ip member of the union.
   {
-    //Restore the fact that the present frame uses the ip member of the union.
     CallFrame *frame = triframes_currentFrame(&(vm.triframes));
     if (frame->has_ip_offset) {
       frame->functionP = frame->function.clip().cp();

@@ -264,15 +264,23 @@ klox_objtable_value_render(cb_offset_t           *dest_offset,
 }
 
 int
-objtablelayer_init(ObjTableLayer *layer) {
-  layer->sm.init(&klox_allocation_size);
+objtablelayer_init(ObjTableLayer *layer, struct cb *cb, cb_offset_t sm_offset) {
+  layer->sm_offset = sm_offset;
+  layer->sm = (ObjTableSM*)cb_at(cb, layer->sm_offset);
+  layer->sm->init(&klox_allocation_size);
   return 0;
+}
+
+void
+objtablelayer_recache(ObjTableLayer *layer, struct cb *cb)
+{
+  layer->sm = (ObjTableSM*)cb_at(cb, layer->sm_offset);
 }
 
 int
 objtablelayer_assign(ObjTableLayer *dest, ObjTableLayer *src) {
   *dest = *src;
-
+  assert(dest->sm == (ObjTableSM*)cb_at(thread_cb, dest->sm_offset));
   return 0;
 }
 
@@ -285,10 +293,12 @@ objtablelayer_traverse(const struct cb                **cb,
 
   (void)ret;
 
+  assert(layer->sm == (ObjTableSM*)cb_at(thread_cb, layer->sm_offset));
+
   // Traverse the structmap entries.
-  ret = layer->sm.traverse(cb,
-                           (structmap_traverse_func_t)func,
-                           closure);
+  ret = layer->sm->traverse(cb,
+                            (structmap_traverse_func_t)func,
+                            closure);
   assert(ret == 0);
 
   return 0;
@@ -296,24 +306,28 @@ objtablelayer_traverse(const struct cb                **cb,
 
 size_t
 objtablelayer_external_size(ObjTableLayer *layer) {
-  return layer->sm.external_size();
+  assert(layer->sm == (ObjTableSM*)cb_at(thread_cb, layer->sm_offset));
+  return layer->sm->external_size();
 }
 
 size_t
 objtablelayer_internal_size(ObjTableLayer *layer) {
-  return layer->sm.internal_size();
+  assert(layer->sm == (ObjTableSM*)cb_at(thread_cb, layer->sm_offset));
+  return layer->sm->internal_size();
 }
 
 size_t
 objtablelayer_size(ObjTableLayer *layer) {
-  return layer->sm.size();
+  assert(layer->sm == (ObjTableSM*)cb_at(thread_cb, layer->sm_offset));
+  return layer->sm->size();
 }
 
 void
 objtablelayer_external_size_adjust(ObjTableLayer *layer,
                                    ssize_t        adjustment)
 {
-  layer->sm.external_size_adjust(adjustment);
+  assert(layer->sm == (ObjTableSM*)cb_at(thread_cb, layer->sm_offset));
+  layer->sm->external_size_adjust(adjustment);
 }
 
 int
@@ -329,12 +343,20 @@ fields_layer_init(struct cb **cb, struct cb_region *region, FieldsSM *sm) {
 }
 
 void
-objtable_init(ObjTable *obj_table)
+objtable_init(ObjTable *obj_table, struct cb *cb, cb_offset_t a_offset, cb_offset_t b_offset, cb_offset_t c_offset)
 {
-  objtablelayer_init(&(obj_table->a));
-  objtablelayer_init(&(obj_table->b));
-  objtablelayer_init(&(obj_table->c));
+  objtablelayer_init(&(obj_table->a), cb, a_offset);
+  objtablelayer_init(&(obj_table->b), cb, b_offset);
+  objtablelayer_init(&(obj_table->c), cb, c_offset);
   obj_table->next_obj_id.id  = 1;
+}
+
+void
+objtable_recache(ObjTable *obj_table, struct cb *cb)
+{
+  objtablelayer_recache(&(obj_table->a), cb);
+  objtablelayer_recache(&(obj_table->b), cb);
+  objtablelayer_recache(&(obj_table->c), cb);
 }
 
 void
@@ -346,20 +368,23 @@ objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset)
 
   int ret;
   (void)ret;
+  assert(obj_table->a.sm == (ObjTableSM*)cb_at(thread_cb, obj_table->a.sm_offset));
+  assert(obj_table->b.sm == (ObjTableSM*)cb_at(thread_cb, obj_table->b.sm_offset));
+  assert(obj_table->c.sm == (ObjTableSM*)cb_at(thread_cb, obj_table->c.sm_offset));
 
-  unsigned int pre_node_count = obj_table->a.sm.node_count();
+  unsigned int pre_node_count = obj_table->a.sm->node_count();
 
   ret = objtablelayer_insert(&thread_cb, &thread_region, &(obj_table->a), obj_id.id, offset);
    assert(ret == 0);
 
-  unsigned int post_node_count = obj_table->a.sm.node_count();
+  unsigned int post_node_count = obj_table->a.sm->node_count();
   assert(post_node_count >= pre_node_count);
 
   //Account for future structmap enlargement on merge due to slot collisions.
   unsigned int delta_node_count = post_node_count - pre_node_count;
   assert(post_node_count >= pre_node_count);
-  unsigned int b_collide_node_count = obj_table->b.sm.would_collide_node_count(thread_cb, obj_id.id);
-  unsigned int c_collide_node_count = obj_table->c.sm.would_collide_node_count(thread_cb, obj_id.id);
+  unsigned int b_collide_node_count = obj_table->b.sm->would_collide_node_count(thread_cb, obj_id.id);
+  unsigned int c_collide_node_count = obj_table->c.sm->would_collide_node_count(thread_cb, obj_id.id);
   unsigned int max_collide_node_count = (b_collide_node_count > c_collide_node_count ? b_collide_node_count : c_collide_node_count);
   if (max_collide_node_count > delta_node_count) {
     unsigned int addl_node_count = max_collide_node_count - delta_node_count;
@@ -380,12 +405,21 @@ objtable_add(ObjTable *obj_table, cb_offset_t offset)
 }
 
 void
-objtable_freeze(ObjTable *obj_table)
+objtable_freeze(ObjTable *obj_table, struct cb **cb, struct cb_region *region)
 {
+  int ret;
+
+  (void)ret;
+
+  cb_offset_t new_a_offset;
+
+  ret = cb_region_memalign(cb, region, &new_a_offset, alignof(ObjTableSM), sizeof(ObjTableSM));
+  assert(ret == CB_SUCCESS);
+
   //assert(num_entries(obj_table->c) == 0); //FIXME create this check
   objtablelayer_assign(&(obj_table->c), &(obj_table->b));
   objtablelayer_assign(&(obj_table->b), &(obj_table->a));
-  objtablelayer_init(&(obj_table->a));
+  objtablelayer_init(&(obj_table->a), *cb, new_a_offset);
 
   //Track only new additional collision nodes.
   snap_addl_collision_nodes = addl_collision_nodes;
@@ -395,10 +429,14 @@ objtable_freeze(ObjTable *obj_table)
 size_t
 objtable_consolidation_size(ObjTable *obj_table)
 {
-  size_t b_external_size = obj_table->b.sm.external_size();
-  size_t b_internal_size = obj_table->b.sm.internal_size();
-  size_t c_external_size = obj_table->c.sm.external_size();
-  size_t c_internal_size = obj_table->c.sm.internal_size();
+  assert(obj_table->a.sm == (ObjTableSM*)cb_at(thread_cb, obj_table->a.sm_offset));
+  assert(obj_table->b.sm == (ObjTableSM*)cb_at(thread_cb, obj_table->b.sm_offset));
+  assert(obj_table->c.sm == (ObjTableSM*)cb_at(thread_cb, obj_table->c.sm_offset));
+
+  size_t b_external_size = obj_table->b.sm->external_size();
+  size_t b_internal_size = obj_table->b.sm->internal_size();
+  size_t c_external_size = obj_table->c.sm->external_size();
+  size_t c_internal_size = obj_table->c.sm->internal_size();
   size_t addl_size       = snap_addl_collision_nodes * (sizeof(ObjTableSM::node) + alignof(ObjTableSM::node) - 1);
 
   KLOX_TRACE("objtable b_external_size: %zu, b_internal_size: %zu, c_external_size: %zu, c_internal_size: %zu, modification_size: %zu, addl_size: %zu\n",
@@ -748,13 +786,20 @@ klox_value_render(cb_offset_t           *dest_offset,
 }
 
 void
+klox_on_cb_preresize(struct cb *old_cb, struct cb *new_cb)
+{
+  KLOX_TRACE("Pre-RESIZE\n");
+  assert(on_main_thread);
+}
+
+void
 klox_on_cb_resize(struct cb *old_cb, struct cb *new_cb)
 {
   assert(on_main_thread);
   is_resizing = true;
 
-  KLOX_TRACE("~~~~~~~~~~~~RESIZED from %ju to %ju (gc_outstanding? %d, old_cb: %p, new_cb: %p)~~~~~~~~~~~\n",
-          (uintmax_t)cb_ring_size(old_cb), (uintmax_t)cb_ring_size(new_cb), gc_request_is_outstanding, old_cb, new_cb);
+  KLOX_TRACE("~~~~~~~~~~~~RESIZED from %ju to %ju (gc_outstanding? %d, old_cb: %p, new_cb: %p, thread_cb: %p)~~~~~~~~~~~\n",
+          (uintmax_t)cb_ring_size(old_cb), (uintmax_t)cb_ring_size(new_cb), gc_request_is_outstanding, old_cb, new_cb, thread_cb);
 
   tristack_recache(&(vm.tristack), new_cb);
 
@@ -787,6 +832,11 @@ klox_on_cb_resize(struct cb *old_cb, struct cb *new_cb)
     //TriFrames struct (in particular the adirect one).
     triframes_recache(&(vm.triframes), new_cb);
   }
+
+  //FIXME - this ought to be doable above by tristack_recache(), but presently
+  //the crip() calls above will call co(), which expects the ObjTableLayer's
+  //internal pointer to old_cb, so the objtablelayer_lookup() assert() will fail.
+  objtable_recache(&thread_objtable, new_cb);
 
   // Rewrite all rewritable pointers (generally held on C-stack frames).
   rcbp_rewrite_list(new_cb);
@@ -892,14 +942,26 @@ gc_main_loop(void *)
     //printf("DANDEBUG Received new GC request %p\n", curr_request);
 
     //Do the Garbage Collection / Condensing.
+
     // Make the threadlocal cb the target cb.
     thread_cb = curr_request->req.orig_cb;
     thread_ring_start = cb_ring_start(thread_cb);
     thread_ring_mask  = cb_ring_mask(thread_cb);
+
     // Make the threadlocal ObjTable resolve toward the target's frozen B and C layers.
-    objtablelayer_init(&(thread_objtable.a));
+    DEBUG_ONLY(struct cb *cb0 = curr_request->req.orig_cb);
+    ret = cb_region_memalign(&(curr_request->req.orig_cb),
+                             &(curr_request->req.objtable_blank_region),
+                             &(curr_request->resp.objtable_blank_firstlevel_offset),
+                             alignof(ObjTableSM),
+                             sizeof(ObjTableSM));
+    assert(ret == CB_SUCCESS);
+    DEBUG_ONLY(struct cb *cb1 = curr_request->req.orig_cb);
+    assert(cb1 == cb0);
+    objtablelayer_init(&(thread_objtable.a), curr_request->req.orig_cb, curr_request->resp.objtable_blank_firstlevel_offset);
     objtablelayer_assign(&(thread_objtable.b), &(curr_request->req.objtable_b));
     objtablelayer_assign(&(thread_objtable.c), &(curr_request->req.objtable_c));
+
     ret = gc_perform(curr_request);
     if (ret != 0) {
       fprintf(stderr, "Failed to GC via CB.\n");
@@ -938,7 +1000,6 @@ gc_init(void)
   cb_params.ring_size = 8388608 * 4;
   cb_params.mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE;
   cb_params.flags |= CB_PARAMS_F_MLOCK;
-  cb_params.on_resize = &klox_on_cb_resize;
   strncpy(cb_params.filename_prefix, "gc", sizeof(cb_params.filename_prefix));
   gc_thread_cb = cb_create(&cb_params, sizeof(cb_params));
   if (!gc_thread_cb) {
@@ -1662,8 +1723,19 @@ gc_perform(struct gc_request_response *rr)
         cb_region_cursor(&rr->req.objtable_new_region),
         cb_region_end(&rr->req.objtable_new_region));
 
-    objtablelayer_init(&(rr->resp.objtable_new_b));
-    KLOX_TRACE("condense objtable 1:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
+    cb_offset_t new_b_firstlevel;
+    DEBUG_ONLY(struct cb *cb0 = rr->req.orig_cb);
+    ret = cb_region_memalign(&(rr->req.orig_cb),
+                             &(rr->req.objtable_firstlevel_new_region),
+                             &new_b_firstlevel,
+                             alignof(ObjTableSM),
+                             sizeof(ObjTableSM));
+    assert(ret == CB_SUCCESS);
+    DEBUG_ONLY(struct cb *cb1 = rr->req.orig_cb);
+    assert(cb1 == cb0);
+    objtablelayer_init(&(rr->resp.objtable_new_b), rr->req.orig_cb, new_b_firstlevel);
+
+    KLOX_TRACE("condense objtable 1:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm->root_node_offset);
 
     closure.src_cb      = rr->req.orig_cb;
     closure.dest_cb     = rr->req.orig_cb;
@@ -1674,7 +1746,7 @@ gc_perform(struct gc_request_response *rr)
     DEBUG_ONLY(closure.last_new_b_size = objtablelayer_size(&(rr->resp.objtable_new_b)));
     closure.white_list  = CB_NULL_OID;
 
-    KLOX_TRACE("condense objtable 2:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
+    KLOX_TRACE("condense objtable 2:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm->root_node_offset);
 
     ret = objtablelayer_traverse((const struct cb **)&(rr->req.orig_cb),
                                  &(rr->req.objtable_b),
@@ -1682,7 +1754,7 @@ gc_perform(struct gc_request_response *rr)
                                  &closure);
     assert(ret == 0);
 
-    KLOX_TRACE("condense objtable 3:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
+    KLOX_TRACE("condense objtable 3:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm->root_node_offset);
     KLOX_TRACE("done with copy_objtable_b(). region: [s:%ju, c:%ju, e:%ju], used size: %ju\n",
                (uintmax_t)cb_region_start(&(rr->req.objtable_new_region)),
                (uintmax_t)cb_region_cursor(&(rr->req.objtable_new_region)),
@@ -1694,7 +1766,7 @@ gc_perform(struct gc_request_response *rr)
                                  copy_objtable_c_not_in_b,
                                  &closure);
     assert(ret == 0);
-    KLOX_TRACE("condense objtable 4:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm.root_node_offset);
+    KLOX_TRACE("condense objtable 4:  new_root_b: %ju\n", (uintmax_t)rr->resp.objtable_new_b.sm->root_node_offset);
     KLOX_TRACE("done with copy_objtable_c_not_in_b() [s:%ju, c:%ju, e:%ju], used size: %ju\n",
                (uintmax_t)cb_region_start(&(rr->req.objtable_new_region)),
                (uintmax_t)cb_region_cursor(&(rr->req.objtable_new_region)),
@@ -1752,10 +1824,9 @@ gc_perform(struct gc_request_response *rr)
 
     assert(i == 0);
 
-
     //Create temporary view of what will be the new, consolidated objtable.
     static __thread ObjTable thread_consObjtable;  //thread-local because too large for stack
-    objtable_init(&thread_consObjtable);
+    objtable_init(&thread_consObjtable, rr->req.orig_cb, rr->resp.objtable_blank_firstlevel_offset, rr->resp.objtable_blank_firstlevel_offset, rr->resp.objtable_blank_firstlevel_offset);
     objtablelayer_assign(&(thread_consObjtable.a), &(rr->resp.objtable_new_b));
 
     //Copy C section

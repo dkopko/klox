@@ -252,7 +252,8 @@ struct CBO
 typedef struct { uint64_t id; } ObjID;
 
 typedef struct ObjTableLayer {
-  ObjTableSM sm;
+  cb_offset_t  sm_offset;
+  ObjTableSM  *sm;
 } ObjTableLayer;
 
 typedef struct ObjTable {
@@ -262,7 +263,8 @@ typedef struct ObjTable {
   ObjID         next_obj_id;
 } ObjTable;
 
-int objtablelayer_init(ObjTableLayer *layer);
+int objtablelayer_init(ObjTableLayer *layer, struct cb *cb, cb_offset_t sm_offset);
+void objtablelayer_recache(ObjTableLayer *layer, struct cb *cb);
 int objtablelayer_assign(ObjTableLayer *dest, ObjTableLayer *src);
 
 typedef int (*objtablelayer_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
@@ -289,7 +291,8 @@ objtablelayer_insert(struct cb        **cb,
                      uint64_t           key,
                      uint64_t           value)
 {
-  return layer->sm.insert(cb, region, key, value);
+  assert(layer->sm == (ObjTableSM*)cb_at(thread_cb, layer->sm_offset));
+  return layer->sm->insert(cb, region, key, value);
 }
 
 extern inline bool
@@ -298,14 +301,15 @@ objtablelayer_lookup(const struct cb *cb,
                      uint64_t         key,
                      uint64_t        *value)
 {
-  return (layer->sm.lookup(cb, key, value) && *value != CB_NULL);
+  assert(layer->sm == (ObjTableSM*)cb_at(cb, layer->sm_offset));
+  return (layer->sm->lookup(cb, key, value) && *value != CB_NULL);
 }
-
 
 int methods_layer_init(struct cb **cb, struct cb_region *region, MethodsSM *sm);
 int fields_layer_init(struct cb **cb, struct cb_region *region, FieldsSM *sm);
 
-void objtable_init(ObjTable *obj_table);
+void objtable_init(ObjTable *obj_table, struct cb *cb, cb_offset_t a_offset, cb_offset_t b_offset, cb_offset_t c_offset);
+void objtable_recache(ObjTable *obj_table, struct cb *cb);
 void objtable_add_at(ObjTable *obj_table, ObjID obj_id, cb_offset_t offset);
 ObjID objtable_add(ObjTable *obj_table, cb_offset_t offset);
 cb_offset_t objtable_lookup(ObjTable *obj_table, ObjID obj_id);
@@ -314,7 +318,7 @@ cb_offset_t objtable_lookup_B(ObjTable *obj_table, ObjID obj_id);
 cb_offset_t objtable_lookup_C(ObjTable *obj_table, ObjID obj_id);
 void objtable_invalidate(ObjTable *obj_table, ObjID obj_id);
 void objtable_external_size_adjust_A(ObjTable *obj_table, ssize_t adjustment);
-void objtable_freeze(ObjTable *obj_table);
+void objtable_freeze(ObjTable *obj_table, struct cb **cb, struct cb_region *region);
 size_t objtable_consolidation_size(ObjTable *obj_table);
 
 
@@ -454,6 +458,9 @@ klox_value_no_external_size(const struct cb      *cb,
                             const struct cb_term *term);
 
 void
+klox_on_cb_preresize(struct cb *old_cb, struct cb *new_cb);
+
+void
 klox_on_cb_resize(struct cb *old_cb, struct cb *new_cb);
 
 
@@ -468,6 +475,8 @@ struct gc_request
   int               exec_phase;
 
   //Objtable
+  struct cb_region  objtable_blank_region;
+  struct cb_region  objtable_firstlevel_new_region;
   struct cb_region  objtable_new_region;
   ObjTableLayer     objtable_b;
   ObjTableLayer     objtable_c;
@@ -513,6 +522,7 @@ struct gc_request
 
 struct gc_response
 {
+  cb_offset_t   objtable_blank_firstlevel_offset;
   ObjTableLayer objtable_new_b;
 
   cb_offset_t  tristack_new_bbo; // B base offset

@@ -18,7 +18,7 @@ extern __thread bool can_print;
     const char *__f = (FL); \
     const char *__basename = strrchr(__f, '/'); \
     __basename = (__basename ? __basename+1 : __f); \
-    KLOX_TRACE_("TRACE %s:%d:%s() " FMT, __basename, LINE, FUN, ##ARGS); \
+    KLOX_TRACE_("TRACE %c %s:%d:%s() " FMT, (on_main_thread? 'M' : 'G'), __basename, LINE, FUN, ##ARGS); \
   } while(0)
 
 #define KLOX_TRACE(FMT, ARGS...) \
