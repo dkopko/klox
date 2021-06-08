@@ -3,7 +3,6 @@
 #include "cb_term.h"
 
 #include <assert.h>
-#include <pthread.h>
 #include <stdio.h>
 #include "compiler.h"
 #include "object.h"
@@ -44,7 +43,7 @@ struct cb        *gc_thread_cb            = NULL;
 struct cb_region  gc_thread_region;
 cb_offset_t       gc_thread_darkset_bst   = CB_BST_SENTINEL;
 
-static pthread_t gc_thread;
+static std::thread gc_thread;
 static std::atomic<bool> gc_stop_flag(false);
 static std::atomic<struct gc_request_response*> gc_current_request(0);
 static std::atomic<struct gc_request_response*> gc_current_response(0);
@@ -920,8 +919,8 @@ integrate_any_gc_response(void) {
 }
 
 
-void*
-gc_main_loop(void *)
+void
+gc_main_loop(void)
 {
   //printf("DANDEBUG On GC thread\n");
   struct gc_request_response *last_request = 0;
@@ -981,15 +980,11 @@ gc_main_loop(void *)
   }
 
   //printf("DANDEBUG Exiting GC thread\n");
-  return 0;
 }
 
 int
 gc_init(void)
 {
-  int ret;
-  (void)ret;
-
   gc.grayCount = 0;
   gc.grayCapacity = 0;
   gc.grayStack = CB_NULL;
@@ -1008,22 +1003,7 @@ gc_init(void)
   }
 
   // Spawn the GC thread.
-  // NOTE: The GC's thread-local ObjTable takes up so much space it requires us
-  // to use a larger-sized stack.  (I have found no Linux-specific documentation
-  // stating that TLS will be allocated from the stack area specified by this
-  // attribute, but QNX documentation does state as much:
-  // http://www.qnx.com/developers/docs/6.5.0SP1.update/com.qnx.doc.neutrino_lib_ref/p/pthread_attr_setstacksize.html
-  pthread_attr_t gc_thread_attr;
-  ret = pthread_attr_init(&gc_thread_attr);
-  assert(ret == 0);
-  size_t addl_stack_size = sizeof(ObjTable);
-  size_t old_gc_stacksize;
-  ret = pthread_attr_getstacksize(&gc_thread_attr, &old_gc_stacksize);
-  assert(ret == 0);
-  ret = pthread_attr_setstacksize(&gc_thread_attr, old_gc_stacksize + addl_stack_size);
-  assert(ret == 0);
-  ret = pthread_create(&gc_thread, &gc_thread_attr, gc_main_loop, 0);
-  assert(ret == 0);
+  gc_thread = std::thread(gc_main_loop);
 
   return 0;
 }
@@ -1032,13 +1012,9 @@ gc_init(void)
 int
 gc_deinit(void)
 {
-  int ret;
-  (void)ret;
-
   // Cause the GC thread to terminate.
   gc_stop_flag.store(true, std::memory_order_relaxed);
-  ret = pthread_join(gc_thread, 0);
-  assert(ret == 0);
+  gc_thread.join();
   //printf("DANDEBUG GC thread rejoined\n");
   return 0;
 }
@@ -1825,9 +1801,9 @@ gc_perform(struct gc_request_response *rr)
     assert(i == 0);
 
     //Create temporary view of what will be the new, consolidated objtable.
-    static __thread ObjTable thread_consObjtable;  //thread-local because too large for stack
-    objtable_init(&thread_consObjtable, rr->req.orig_cb, rr->resp.objtable_blank_firstlevel_offset, rr->resp.objtable_blank_firstlevel_offset, rr->resp.objtable_blank_firstlevel_offset);
-    objtablelayer_assign(&(thread_consObjtable.a), &(rr->resp.objtable_new_b));
+    ObjTable consObjtable;
+    objtable_init(&consObjtable, rr->req.orig_cb, rr->resp.objtable_blank_firstlevel_offset, rr->resp.objtable_blank_firstlevel_offset, rr->resp.objtable_blank_firstlevel_offset);
+    objtablelayer_assign(&(consObjtable.a), &(rr->resp.objtable_new_b));
 
     //Copy C section
     while (i < rr->req.triframes_frameCount && i < rr->req.triframes_bbi) {
@@ -1845,7 +1821,7 @@ gc_perform(struct gc_request_response *rr)
 
       // Revise the pointers internal to the CallFrame.
       size_t ip_offset = src->ip - src->ip_root;
-      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &thread_consObjtable).cp();
+      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &consObjtable).cp();
       dest->constantsValuesP = dest->functionP->chunk.constants.values.crp(rr->req.orig_cb).cp();
       dest->ip_root = dest->functionP->chunk.code.crp(rr->req.orig_cb).cp();
       dest->ip = dest->ip_root + ip_offset;
@@ -1869,7 +1845,7 @@ gc_perform(struct gc_request_response *rr)
 
       // Revise the pointers internal to the CallFrame.
       size_t ip_offset = src->ip - src->ip_root;
-      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &thread_consObjtable).cp();
+      dest->functionP = dest->function.crip_alt(rr->req.orig_cb, &consObjtable).cp();
       dest->constantsValuesP = dest->functionP->chunk.constants.values.crp(rr->req.orig_cb).cp();
       dest->ip_root = dest->functionP->chunk.code.crp(rr->req.orig_cb).cp();
       dest->ip = dest->ip_root + ip_offset;
