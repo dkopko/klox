@@ -21,8 +21,8 @@ typedef struct {
   Value* slots;
   unsigned int slotsIndex;  // the index within the stack where slots field points.
   unsigned int slotsCount;
-  bool has_ip_offset;
   unsigned int gc_integration_epoch;
+  DEBUG_ONLY(bool has_ip_offset);
 } CallFrame;
 
 typedef struct {

@@ -789,6 +789,18 @@ klox_on_cb_preresize(struct cb *old_cb, struct cb *new_cb)
 {
   KLOX_TRACE("Pre-RESIZE\n");
   assert(on_main_thread);
+
+  // Convert each frame to temporarily hold it's ip_offset instead of a raw
+  // ip pointer.  The frames will be converted back to new raw ip pointers
+  // under the new CB after resize.
+  for (unsigned int i = 0; i < vm.triframes.frameCount; ++i) {
+      CallFrame *frame = triframes_at_alt(&(vm.triframes), i, old_cb);
+
+      assert(!frame->has_ip_offset);
+
+      frame->ip_offset = frame->ip - frame->ip_root;
+      DEBUG_ONLY(frame->has_ip_offset = true);
+  }
 }
 
 void
@@ -807,18 +819,15 @@ klox_on_cb_resize(struct cb *old_cb, struct cb *new_cb)
     //to rewrite the internal pointers of each frame.
 
     for (unsigned int i = 0; i < vm.triframes.frameCount; ++i) {
-      CallFrame *oldFrame = triframes_at_alt(&(vm.triframes), i, old_cb);
-      CallFrame *newFrame = triframes_at_alt(&(vm.triframes), i, new_cb);
+      CallFrame *frame = triframes_at_alt(&(vm.triframes), i, new_cb);
 
-      if (!oldFrame->has_ip_offset) {
-        assert(!newFrame->has_ip_offset);
+      assert(frame->has_ip_offset);
 
-        size_t old_ip_offset = oldFrame->ip - oldFrame->ip_root;
-        newFrame->functionP = newFrame->function.crip(new_cb).cp();
-        newFrame->constantsValuesP = newFrame->functionP->chunk.constants.values.crp(new_cb).cp();
-        newFrame->ip_root = newFrame->functionP->chunk.code.crp(new_cb).cp();
-        newFrame->ip = newFrame->ip_root + old_ip_offset;
-      }
+      frame->functionP = frame->function.crip(new_cb).cp();
+      frame->constantsValuesP = frame->functionP->chunk.constants.values.crp(new_cb).cp();
+      frame->ip_root = frame->functionP->chunk.code.crp(new_cb).cp();
+      frame->ip = frame->ip_root + frame->ip_offset;
+      DEBUG_ONLY(frame->has_ip_offset = false);
     }
 
     triframes_recache(&(vm.triframes), new_cb);

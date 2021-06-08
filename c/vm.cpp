@@ -218,20 +218,22 @@ fixup_slots:
 
   //Rederive cached pointers of the returned-to frame.
   if (__builtin_expect(!!(vm.currentFrame->gc_integration_epoch != gc_integration_epoch), 0)) {
-    unsigned int ip_offset;
-    if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
-      ip_offset = vm.currentFrame->ip - vm.currentFrame->ip_root;
-    }
+    // Temporarily switch to holding an ip_offset.
+    assert(!vm.currentFrame->has_ip_offset);
+    vm.currentFrame->ip_offset = vm.currentFrame->ip - vm.currentFrame->ip_root;
+    DEBUG_ONLY(vm.currentFrame->has_ip_offset = true);
+
     vm.currentFrame->functionP = vm.currentFrame->function.clip().cp();
     vm.currentFrame->constantsValuesP = vm.currentFrame->functionP->chunk.constants.values.clp().cp();
     vm.currentFrame->ip_root = vm.currentFrame->functionP->chunk.code.clp().cp();
-    if (!vm.currentFrame->has_ip_offset) {  //Avoid during this function's invocation during integrateGCResponse()
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-      vm.currentFrame->ip = vm.currentFrame->ip_root + ip_offset;
-#pragma GCC diagnostic pop
-      __builtin_prefetch(vm.currentFrame->ip);
-    }
+
+    // Switch back to holding a raw ip pointer.
+    assert(vm.currentFrame->has_ip_offset);
+    vm.currentFrame->ip = vm.currentFrame->ip_root + vm.currentFrame->ip_offset;
+    DEBUG_ONLY(vm.currentFrame->has_ip_offset = false);
+
+    __builtin_prefetch(vm.currentFrame->ip);
+
     vm.currentFrame->gc_integration_epoch = gc_integration_epoch;
   }
 
@@ -348,11 +350,8 @@ static void runtimeError(const char* format, ...) {
     // -1 because the IP is sitting on the next instruction to be
     // executed.
     size_t instruction;
-    if (frame->has_ip_offset) {
-        instruction = frame->ip_offset - 1;
-    } else {
-        instruction = frame->ip - frame->ip_root - 1;
-    }
+    assert(!frame->has_ip_offset);
+    instruction = frame->ip - frame->ip_root - 1;
     fprintf(stderr, "[line %d] in ",
             function.clip().cp()->chunk.lines.clp().cp()[instruction]);
     if (function.clip().cp()->name.is_nil()) {
@@ -434,7 +433,7 @@ static bool call(OID<ObjClosure> closure, int argCount) {
   frame->constantsValuesP = functionP->chunk.constants.values.clp().cp();
   frame->ip_root = functionP->chunk.code.clp().cp();
   frame->ip = frame->ip_root;
-  frame->has_ip_offset = false;
+  DEBUG_ONLY(frame->has_ip_offset = false);
   frame->gc_integration_epoch = gc_integration_epoch;
 
   // +1 to include either the called function or the receiver.

@@ -1290,17 +1290,17 @@ void integrateGCResponse(struct gc_request_response *rr) {
               (rr->req.gc_dest_region_end - rr->req.gc_dest_region_start));
   }
 
-  // Temporarily let currentFrame hold an ip_offset, so that we'll later
-  // derive the correct ip under revised objtable locations.
+  // Cache the current frame's ip_offset, so that we'll later derive the correct
+  // ip under revised objtable locations.
+  size_t currentFrameIpOffset;
   {
     CallFrame* frame = triframes_currentFrame(&(vm.triframes));
-    if (!frame->has_ip_offset) {
-      assert(frame->functionP == frame->function.clip().cp());
-      assert(frame->constantsValuesP == frame->functionP->chunk.constants.values.clp().cp());
-      assert(frame->ip_root == frame->functionP->chunk.code.clp().cp());
-      frame->ip_offset = frame->ip - frame->ip_root;
-      frame->has_ip_offset = true;
-    }
+
+    assert(!frame->has_ip_offset);
+    assert(frame->functionP == frame->function.clip().cp());
+    assert(frame->constantsValuesP == frame->functionP->chunk.constants.values.clp().cp());
+    assert(frame->ip_root == frame->functionP->chunk.code.clp().cp());
+    currentFrameIpOffset = frame->ip - frame->ip_root;
   }
 
   //Integrate condensed objtable.
@@ -1364,16 +1364,15 @@ void integrateGCResponse(struct gc_request_response *rr) {
              (uintmax_t)vm.triframes.cbi);
   KLOX_TRACE_ONLY(triframes_print(&(vm.triframes)));
 
-  //Restore the fact that the present frame uses the ip member of the union.
+  //Recache the pointers of the current frame.
   {
     CallFrame *frame = triframes_currentFrame(&(vm.triframes));
-    if (frame->has_ip_offset) {
-      frame->functionP = frame->function.clip().cp();
-      frame->constantsValuesP = frame->functionP->chunk.constants.values.clp().cp();
-      frame->ip_root = frame->functionP->chunk.code.clp().cp();
-      frame->ip = frame->ip_root + frame->ip_offset;
-      frame->has_ip_offset = false;
-    }
+
+    assert(!frame->has_ip_offset);
+    frame->functionP = frame->function.clip().cp();
+    frame->constantsValuesP = frame->functionP->chunk.constants.values.clp().cp();
+    frame->ip_root = frame->functionP->chunk.code.clp().cp();
+    frame->ip = frame->ip_root + currentFrameIpOffset;
   }
 
   //Integrate condensed strings.
