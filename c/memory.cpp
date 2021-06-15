@@ -194,6 +194,8 @@ void grayObject(const OID<Obj> objectOID) {
   // Don't get caught in cycle.
   if (objectIsDark(objectOID)) return;
 
+  gc.grayCountTotal++;
+
 #ifdef DEBUG_TRACE_GC
   KLOX_TRACE("id: #%ju, obj: ", (uintmax_t)objectOID.id().id);
   KLOX_TRACE_ONLY(printValue(OBJ_VAL(objectOID.id()), false));
@@ -202,33 +204,7 @@ void grayObject(const OID<Obj> objectOID) {
 
   objectSetDark(objectOID);
 
-  if (gc.grayCapacity < gc.grayCount + 1) {
-    int oldGrayCapacity = gc.grayCapacity;
-    cb_offset_t oldGrayStackOffset = gc.grayStack.co();
-    gc.grayCapacity = GROW_CAPACITY(gc.grayCapacity);
-
-    gc.grayStack = reallocate_within(&gc_thread_cb,
-                                     &gc_thread_region,
-                                     oldGrayStackOffset,
-                                     sizeof(OID<Obj>) * oldGrayCapacity,
-                                     sizeof(OID<Obj>) * gc.grayCapacity,
-                                     cb_alignof(OID<Obj>),
-                                     false,
-                                     true);
-
-#ifdef DEBUG_TRACE_GC
-    KLOX_TRACE("@%ju OID<Obj>[%zd] array allocated (%zd bytes) (resized from @%ju OID<Obj>[%zd] array (%zd bytes))\n",
-               (uintmax_t)gc.grayStack.co(),
-               (size_t)gc.grayCapacity,
-               sizeof(OID<Obj*>) * gc.grayCapacity,
-               (uintmax_t)oldGrayStackOffset,
-               (size_t)oldGrayCapacity,
-               sizeof(OID<Obj*>) * oldGrayCapacity);
-#endif
-
-  }
-
-  gc.grayStack.mrp(gc_thread_cb).mp()[gc.grayCount++] = objectOID;
+  gc.grayStack.mlp().mp()[gc.grayCount++] = objectOID;
 }
 
 void grayValue(Value value) {
@@ -1039,13 +1015,24 @@ void collectGarbage() {
 
   assert(on_main_thread);
 
+  uintmax_t new_object_count = thread_new_objects_since_last_gc_count;
+  thread_new_objects_since_last_gc_count = 0;
+
   size_t bytes_allocated_before_gc = vm.bytesAllocated;
 
   long pagesize = sysconf(_SC_PAGESIZE);
   assert(pagesize > 0 && is_power_of_2(pagesize));
 
   cb_offset_t this_point_of_gc = cb_cursor(thread_cb);
-  cb_offset_t new_lower_bound = this_point_of_gc;
+
+  ret = logged_region_create(&thread_cb,
+                             &tmp_region,
+                             pagesize,
+                             sizeof(OID<Obj>) * (thread_preserved_objects_count + new_object_count),
+                             CB_REGION_FINAL);
+  assert(ret == 0);
+
+  cb_offset_t new_lower_bound = cb_cursor(thread_cb);
 
   //NOTE: The loop here is to cover the exceedingly rare theoretical
   // circumstance that a gc_request_response be allocated to the same raw
@@ -1084,6 +1071,8 @@ void collectGarbage() {
 
   exec_phase = EXEC_PHASE_PREPARE_REQUEST;
   memset(rr.mp(), 0, sizeof(struct gc_request_response));
+
+  rr.mp()->req.gc_gray_list_region = tmp_region;
 
   //Prepare request contents
   //rr->req.orig_cb  NOTE: this gets set last, down below, after all allocations.
@@ -1386,6 +1375,9 @@ void integrateGCResponse(struct gc_request_response *rr) {
   vm.globals.root_b = rr->resp.globals_new_root_b;
   assert(vm.globals.root_b >= rr->req.new_lower_bound);
   assert(vm.globals.root_a >= rr->req.new_lower_bound);
+
+  // Save the amount of preserved objects for our next GC.
+  thread_preserved_objects_count = rr->resp.preserved_objects_count;
 
   // Collect the white objects.
   exec_phase = EXEC_PHASE_FREE_WHITE_SET;

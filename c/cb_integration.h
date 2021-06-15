@@ -25,6 +25,8 @@ extern __thread unsigned int      gc_integration_epoch;
 extern __thread cb_offset_t       thread_objtable_lower_bound;
 extern __thread unsigned int      addl_collision_nodes;
 extern __thread unsigned int      snap_addl_collision_nodes;
+extern __thread uintmax_t         thread_preserved_objects_count;
+extern __thread uintmax_t         thread_new_objects_since_last_gc_count;
 
 // GC thread state.
 //FIXME make these to gc-thread-local.
@@ -474,6 +476,9 @@ struct gc_request
   size_t            bytes_allocated_before_gc;
   int               exec_phase;
 
+  //Working area for GC thread's gray list
+  struct cb_region  gc_gray_list_region;
+
   //Objtable
   struct cb_region  objtable_blank_region;
   struct cb_region  objtable_firstlevel_new_region;
@@ -535,6 +540,7 @@ struct gc_response
 
   cb_offset_t  globals_new_root_b;
 
+  uintmax_t    preserved_objects_count;
   ObjID        white_list;
 };
 

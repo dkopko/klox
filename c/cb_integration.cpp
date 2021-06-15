@@ -35,6 +35,8 @@ __thread unsigned int      gc_integration_epoch;
 __thread cb_offset_t       thread_objtable_lower_bound;
 __thread unsigned int      addl_collision_nodes;
 __thread unsigned int      snap_addl_collision_nodes;
+__thread uintmax_t         thread_preserved_objects_count;
+__thread uintmax_t         thread_new_objects_since_last_gc_count;
 
 static __thread struct rcbp      *thread_rcbp_list        = NULL;
 
@@ -995,7 +997,7 @@ int
 gc_init(void)
 {
   gc.grayCount = 0;
-  gc.grayCapacity = 0;
+  gc.grayCountTotal = 0;
   gc.grayStack = CB_NULL;
 
   struct cb_params cb_params = CB_PARAMS_DEFAULT;
@@ -1599,8 +1601,8 @@ gc_perform(struct gc_request_response *rr)
       exit(EXIT_FAILURE);  //FIXME _exit()?
   }
   gc.grayCount = 0;
-  gc.grayCapacity = 0;
-  gc.grayStack = CB_NULL;
+  gc.grayCountTotal = 0;
+  gc.grayStack = cb_region_start(&(rr->req.gc_gray_list_region));
   clearDarkObjectSet();
 
   //NOTE: The compilation often hold objects in stack-based (the C language
@@ -1692,7 +1694,7 @@ gc_perform(struct gc_request_response *rr)
   gc_phase = GC_PHASE_MARK_ALL_LEAVES;
   while (gc.grayCount > 0) {
     // Pop an item from the gray stack.
-    OID<Obj> object = gc.grayStack.crp(gc_thread_cb).cp()[--gc.grayCount];
+    OID<Obj> object = gc.grayStack.clp().cp()[--gc.grayCount];
     grayObjectLeaves(object);
   }
 
@@ -1758,6 +1760,7 @@ gc_perform(struct gc_request_response *rr)
                (uintmax_t)cb_region_end(&(rr->req.objtable_new_region)),
                (uintmax_t)(cb_region_cursor(&(rr->req.objtable_new_region)) - cb_region_start(&(rr->req.objtable_new_region))));
 
+    rr->resp.preserved_objects_count = gc.grayCountTotal;
     rr->resp.white_list = closure.white_list;
   }
 

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cb_integration.h"
 #include "cb_bst.h"
 
 #include "memory.h"
@@ -34,6 +35,8 @@ static cb_offset_t allocateObject(size_t size, size_t alignment, ObjType type) {
 
   Obj* object = objectCBO.mlp().mp();  //cb-resize-safe (no allocations in lifetime)
   object->type = type;
+
+  thread_new_objects_since_last_gc_count++;
 
 #ifdef DEBUG_TRACE_GC
   KLOX_TRACE("@%ju %s object allocated (%ld bytes)\n",

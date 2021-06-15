@@ -114,7 +114,7 @@ typedef struct {
 
 typedef struct {
   int grayCount;
-  int grayCapacity;
+  int grayCountTotal;
   CBO<OID<Obj> >  grayStack;
 } GC;
 
