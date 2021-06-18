@@ -44,6 +44,9 @@ static __thread struct rcbp      *thread_rcbp_list        = NULL;
 struct cb_region  gc_thread_grayset_bst_region;
 cb_offset_t       gc_thread_grayset_bst   = CB_BST_SENTINEL;
 
+struct cb_region  gc_thread_dedupeset_bst_region;
+cb_offset_t       gc_thread_dedupeset_bst   = CB_BST_SENTINEL;
+
 static std::thread gc_thread;
 static std::atomic<bool> gc_stop_flag(false);
 static std::atomic<struct gc_request_response*> gc_current_request(0);
@@ -686,6 +689,16 @@ klox_value_shallow_comparator(const struct cb *cb,
   return 0;
 }
 
+//NOTE: This variant would be used when deeply comparing BSTs (via cb_bst_cmp()),
+//  on BSTs where the values are the same as the keys.
+int
+klox_value_null_comparator(const struct cb *cb,
+                           const struct cb_term *lhs,
+                           const struct cb_term *rhs)
+{
+  return 0;
+}
+
 static int
 klox_object_render(cb_offset_t           *dest_offset,
                    struct cb            **cb,
@@ -1128,7 +1141,7 @@ copy_objtable_b(uint64_t  key,
   ObjID obj_id = { .id = key };
   cb_offset_t offset = (cb_offset_t)val;
   bool newly_white = false;
-  cb_offset_t clone_offset;
+  cb_offset_t dest_offset;
   int ret;
 
   assert(!ALREADY_WHITE(offset));
@@ -1149,12 +1162,19 @@ copy_objtable_b(uint64_t  key,
 
   DEBUG_ONLY(cb_offset_t c0 = cb_region_cursor(cl->dest_region));
 
-  clone_offset = cloneObject(&(cl->dest_cb), cl->dest_region, obj_id, offset);
+  bool did_dedupe = !newly_white && dedupeObject(&offset);
+  if (did_dedupe) {
+    printf("DANDEBUG found object in dedupeset.\n");
+    dest_offset = offset;
+  }
+  else {
+    dest_offset = cloneObject(&(cl->dest_cb), cl->dest_region, obj_id, offset);
+  }
 
   DEBUG_ONLY(cb_offset_t c0a = cb_region_cursor(cl->dest_region));
 
   if (newly_white) {
-    CBO<Obj> clonedObj = clone_offset;
+    CBO<Obj> clonedObj = dest_offset;
     clonedObj.mrp(cl->dest_cb).mp()->white_next = cl->white_list;
     cl->white_list = obj_id;
   }
@@ -1165,7 +1185,7 @@ copy_objtable_b(uint64_t  key,
                              cl->dest_region,
                              cl->new_b,
                              key,
-                             (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
+                             (uint64_t)(dest_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
   assert(ret == 0);
 
   DEBUG_ONLY(cb_offset_t c1 = cb_region_cursor(cl->dest_region));
@@ -1182,12 +1202,12 @@ copy_objtable_b(uint64_t  key,
          (uintmax_t)(new_b_external_size - cl->last_new_b_external_size),
          (uintmax_t)(new_b_internal_size - cl->last_new_b_internal_size),
          (uintmax_t)obj_id.id,
-         (uintmax_t)clone_offset,
+         (uintmax_t)dest_offset,
          (newly_white ? "NEWLYWHITE" : "")));
 
   // Actual bytes used must be <= the structmap's self-considered growth.
   assert(external_used_bytes <= klox_Obj_external_size(cl->dest_cb, (Obj*)cb_at(cl->src_cb, offset)));
-  assert(external_used_bytes <= klox_Obj_external_size(cl->dest_cb, (Obj*)cb_at(cl->src_cb, clone_offset)));
+  assert(external_used_bytes <= klox_Obj_external_size(cl->dest_cb, (Obj*)cb_at(cl->src_cb, dest_offset)));
   assert(external_used_bytes <= new_b_external_size - cl->last_new_b_external_size);
   assert(internal_used_bytes <= new_b_internal_size - cl->last_new_b_internal_size);
   assert(total_used_bytes <= new_b_size - cl->last_new_b_size);
@@ -1234,6 +1254,8 @@ copy_objtable_c_not_in_b(uint64_t  key,
       newly_white = true;
     }
   }
+
+  cb_offset_t dest_offset = cEntryOffset;
 
   DEBUG_ONLY(size_t external_used_bytes = 0);
   DEBUG_ONLY(size_t internal_used_bytes = 0);
@@ -1310,15 +1332,22 @@ copy_objtable_c_not_in_b(uint64_t  key,
     }
   } else {
     //Nothing in B masks the presently-traversed entry in C, just insert
-    //a clone of it.
-    cb_offset_t clone_offset = cloneObject(&(cl->dest_cb), cl->dest_region, objOID.id(), cEntryOffset);
+    //a clone of it (or de-dupe it).
+
+    bool did_dedupe = !newly_white && dedupeObject(&dest_offset);
+    if (did_dedupe) {
+      printf("DANDEBUG found object in dedupeset.\n");
+    }
+    else {
+      dest_offset = cloneObject(&(cl->dest_cb), cl->dest_region, objOID.id(), cEntryOffset);
+    }
 
     DEBUG_ONLY(cb_offset_t c0a = cb_region_cursor(cl->dest_region));
 
     DEBUG_ONLY(external_used_bytes = (size_t)(c0a - c0));
 
     if (newly_white) {
-      CBO<Obj> clonedObj = clone_offset;
+      CBO<Obj> clonedObj = dest_offset;
       clonedObj.mrp(cl->dest_cb).mp()->white_next = cl->white_list;
       cl->white_list = objOID.id();
     }
@@ -1329,7 +1358,7 @@ copy_objtable_c_not_in_b(uint64_t  key,
                                cl->dest_region,
                                cl->new_b,
                                key,
-                               (uint64_t)(clone_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
+                               (uint64_t)(dest_offset | (newly_white ? ALREADY_WHITE_FLAG : 0)));
     assert(ret == 0);
 
     DEBUG_ONLY(internal_used_bytes = (size_t)(cb_region_cursor(cl->dest_region) - c0b));
@@ -1350,13 +1379,14 @@ copy_objtable_c_not_in_b(uint64_t  key,
   DEBUG_ONLY(size_t new_b_external_size = objtablelayer_external_size(cl->new_b));
   DEBUG_ONLY(size_t new_b_internal_size = objtablelayer_internal_size(cl->new_b));
   DEBUG_ONLY(size_t new_b_size = objtablelayer_size(cl->new_b));
+  //FIXME this print statement is only accurate for the non-merge case. Split it up into separate prints in the above paths.
   DEBUG_ONLY(KLOX_TRACE("+%ju external, +%ju internal bytes (external estimate:+%ju, internal estimate +%ju) #%ju -> @%ju (external_size_adjustment: %zd)\n",
          (uintmax_t)external_used_bytes,
          (uintmax_t)internal_used_bytes,
          (uintmax_t)(new_b_external_size - cl->last_new_b_external_size),
          (uintmax_t)(new_b_internal_size - cl->last_new_b_internal_size),
          (uintmax_t)objOID.id().id,
-         (uintmax_t)cEntryOffset,
+         (uintmax_t)dest_offset,
          external_size_adjustment));
 
   // Actual bytes used must be <= BST's self-considered growth.
@@ -1583,6 +1613,8 @@ gc_perform(struct gc_request_response *rr)
   gc.grayStack = cb_region_start(&(rr->req.gc_gray_list_region));
   gc_thread_grayset_bst_region = rr->req.gc_grayset_bst_region;
   clearDarkObjectSet();
+  gc_thread_dedupeset_bst_region = rr->req.gc_dedupeset_bst_region;
+  clearDedupeObjectSet();
 
   //NOTE: The compilation often hold objects in stack-based (the C language
   // stack, not the vm.stack) temporaries which are invisble to the garbage

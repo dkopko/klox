@@ -32,6 +32,8 @@ extern __thread uintmax_t         thread_new_objects_since_last_gc_count;
 //FIXME make these to gc-thread-local.
 extern struct cb_region  gc_thread_grayset_bst_region;
 extern cb_offset_t       gc_thread_grayset_bst;
+extern struct cb_region  gc_thread_dedupeset_bst_region;
+extern cb_offset_t       gc_thread_dedupeset_bst;
 
 extern struct gc_request_response* gc_last_processed_response;
 extern bool gc_request_is_outstanding;
@@ -449,6 +451,11 @@ klox_value_shallow_comparator(const struct cb *cb,
                               const struct cb_term *rhs);
 
 int
+klox_value_null_comparator(const struct cb *cb,
+                           const struct cb_term *lhs,
+                           const struct cb_term *rhs);
+
+int
 klox_value_render(cb_offset_t           *dest_offset,
                   struct cb            **cb,
                   const struct cb_term  *term,
@@ -475,9 +482,10 @@ struct gc_request
   size_t            bytes_allocated_before_gc;
   int               exec_phase;
 
-  //Working areas for GC thread's gray list and gray set.
+  //Working areas for GC thread's gray list, gray set, and de-dupe set.
   struct cb_region  gc_gray_list_region;
   struct cb_region  gc_grayset_bst_region;
+  struct cb_region  gc_dedupeset_bst_region;
 
   //Objtable
   struct cb_region  objtable_blank_region;

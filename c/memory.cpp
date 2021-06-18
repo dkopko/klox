@@ -378,6 +378,60 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
   }
 }
 
+void clearDedupeObjectSet(void) {
+  int ret;
+
+  (void)ret;
+
+  ret = cb_bst_init(&thread_cb,
+                    &gc_thread_dedupeset_bst_region,
+                    &gc_thread_dedupeset_bst,
+                    &klox_value_deep_comparator,
+                    &klox_value_null_comparator,
+                    &klox_value_render,
+                    &klox_value_render,
+                    &klox_no_external_size,
+                    &klox_no_external_size);
+  assert(ret == 0);
+}
+
+void addToDedupeObjectSet(cb_offset_t obj_offset) {
+  cb_term key_term;
+  cb_term value_term;
+  int ret;
+
+  (void)ret;
+
+  cb_term_set_u64(&key_term, obj_offset);
+  cb_term_set_u64(&value_term, obj_offset);
+
+  ret = cb_bst_insert(&thread_cb,
+                      &gc_thread_dedupeset_bst_region,
+                      &gc_thread_dedupeset_bst,
+                      cb_region_start(&gc_thread_dedupeset_bst_region),
+                      &key_term,
+                      &value_term);
+  assert(ret == 0);
+}
+
+bool dedupeObject(cb_offset_t *obj_offset) {
+  cb_term key_term;
+  cb_term value_term;
+  int ret;
+
+  cb_term_set_u64(&key_term, *obj_offset);
+
+  ret = cb_bst_lookup(thread_cb,
+                      gc_thread_dedupeset_bst,
+                      &key_term,
+                      &value_term);
+  if (ret != 0)
+    return false;
+
+  *obj_offset = cb_term_get_u64(&value_term);
+  return true;
+}
+
 static void freeObject(OID<Obj> object) {
 #ifdef DEBUG_TRACE_GC
   KLOX_TRACE("id: #%ju, obj: ", (uintmax_t)object.id().id);
@@ -1003,6 +1057,7 @@ void collectGarbage() {
   RCBP<struct gc_request_response> rr;
   struct cb_region tmp_region;
   struct cb_region grayset_bst_region;
+  struct cb_region dedupeset_bst_region;
   cb_offset_t gc_start_offset, gc_end_offset;
   int old_exec_phase;
   int ret;
@@ -1032,6 +1087,13 @@ void collectGarbage() {
 
   ret = logged_region_create(&thread_cb,
                              &grayset_bst_region,
+                             1,
+                             cb_bst_internal_size_given_key_count(thread_preserved_objects_count + new_object_count),
+                             CB_REGION_FINAL);
+  assert(ret == 0);
+
+  ret = logged_region_create(&thread_cb,
+                             &dedupeset_bst_region,
                              1,
                              cb_bst_internal_size_given_key_count(thread_preserved_objects_count + new_object_count),
                              CB_REGION_FINAL);
@@ -1079,6 +1141,7 @@ void collectGarbage() {
 
   rr.mp()->req.gc_gray_list_region = tmp_region;
   rr.mp()->req.gc_grayset_bst_region = grayset_bst_region;
+  rr.mp()->req.gc_dedupeset_bst_region = dedupeset_bst_region;
 
   //Prepare request contents
   //rr->req.orig_cb  NOTE: this gets set last, down below, after all allocations.

@@ -107,6 +107,9 @@ cb_offset_t cloneObject(struct cb **cb, struct cb_region *region, ObjID id, cb_o
 void clearDarkObjectSet(void);
 void grayObject(const OID<Obj> objectOID);
 void grayValue(Value value);
+void clearDedupeObjectSet(void);
+void addToDedupeObjectSet(cb_offset_t obj_offset);
+bool dedupeObject(cb_offset_t *obj_offset);
 void collectGarbage();
 void integrateGCResponse(struct gc_request_response *rr);
 
