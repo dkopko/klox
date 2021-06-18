@@ -155,8 +155,8 @@ bool objectIsDark(const OID<Obj> objectOID) {
 
   cb_term_set_u64(&key_term, objectOID.id().id);
 
-  return cb_bst_contains_key(gc_thread_cb,
-                             gc_thread_darkset_bst,
+  return cb_bst_contains_key(thread_cb,
+                             gc_thread_grayset_bst,
                              &key_term);
 }
 
@@ -168,24 +168,23 @@ static void objectSetDark(OID<Obj> objectOID) {
   cb_term_set_u64(&key_term, objectOID.id().id);
   cb_term_set_u64(&value_term, objectOID.id().id);
 
-  ret = cb_bst_insert(&gc_thread_cb,
-                      &gc_thread_region,
-                      &gc_thread_darkset_bst,
+  ret = cb_bst_insert(&thread_cb,
+                      &gc_thread_grayset_bst_region,
+                      &gc_thread_grayset_bst,
                       0,
                       &key_term,
                       &value_term);
   assert(ret == 0);
   (void)ret;
 
-  //NOTE: We cannot validate growth vs. estimated max growth in this function
-  // because we are not allocating into a static region whose size is known
-  // ahead of time.  As such, regions may be being created dynamically to
-  // fulfill the insertion, and region cursor positions can therefore differ
-  // by large amounts unrelated to actual bst insertion allocations.
+  gc.grayCountTotal++;
+
+  // Validate growth within the grayset region.
+  assert(cb_region_cursor(&gc_thread_grayset_bst_region) - cb_region_start(&gc_thread_grayset_bst_region) <= cb_bst_internal_size_given_key_count(gc.grayCountTotal));
 }
 
 void clearDarkObjectSet(void) {
-  gc_thread_darkset_bst = CB_BST_SENTINEL;
+  gc_thread_grayset_bst = CB_BST_SENTINEL;
 }
 
 void grayObject(const OID<Obj> objectOID) {
@@ -193,8 +192,6 @@ void grayObject(const OID<Obj> objectOID) {
 
   // Don't get caught in cycle.
   if (objectIsDark(objectOID)) return;
-
-  gc.grayCountTotal++;
 
 #ifdef DEBUG_TRACE_GC
   KLOX_TRACE("id: #%ju, obj: ", (uintmax_t)objectOID.id().id);
@@ -1005,6 +1002,7 @@ void collectGarbage() {
   cb_offset_t rr_offset;
   RCBP<struct gc_request_response> rr;
   struct cb_region tmp_region;
+  struct cb_region grayset_bst_region;
   cb_offset_t gc_start_offset, gc_end_offset;
   int old_exec_phase;
   int ret;
@@ -1029,6 +1027,13 @@ void collectGarbage() {
                              &tmp_region,
                              pagesize,
                              sizeof(OID<Obj>) * (thread_preserved_objects_count + new_object_count),
+                             CB_REGION_FINAL);
+  assert(ret == 0);
+
+  ret = logged_region_create(&thread_cb,
+                             &grayset_bst_region,
+                             1,
+                             cb_bst_internal_size_given_key_count(thread_preserved_objects_count + new_object_count),
                              CB_REGION_FINAL);
   assert(ret == 0);
 
@@ -1073,6 +1078,7 @@ void collectGarbage() {
   memset(rr.mp(), 0, sizeof(struct gc_request_response));
 
   rr.mp()->req.gc_gray_list_region = tmp_region;
+  rr.mp()->req.gc_grayset_bst_region = grayset_bst_region;
 
   //Prepare request contents
   //rr->req.orig_cb  NOTE: this gets set last, down below, after all allocations.

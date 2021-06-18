@@ -30,9 +30,8 @@ extern __thread uintmax_t         thread_new_objects_since_last_gc_count;
 
 // GC thread state.
 //FIXME make these to gc-thread-local.
-extern struct cb        *gc_thread_cb;
-extern struct cb_region  gc_thread_region;
-extern cb_offset_t       gc_thread_darkset_bst;
+extern struct cb_region  gc_thread_grayset_bst_region;
+extern cb_offset_t       gc_thread_grayset_bst;
 
 extern struct gc_request_response* gc_last_processed_response;
 extern bool gc_request_is_outstanding;
@@ -476,8 +475,9 @@ struct gc_request
   size_t            bytes_allocated_before_gc;
   int               exec_phase;
 
-  //Working area for GC thread's gray list
+  //Working areas for GC thread's gray list and gray set.
   struct cb_region  gc_gray_list_region;
+  struct cb_region  gc_grayset_bst_region;
 
   //Objtable
   struct cb_region  objtable_blank_region;

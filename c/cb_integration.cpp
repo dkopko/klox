@@ -41,9 +41,8 @@ __thread uintmax_t         thread_new_objects_since_last_gc_count;
 static __thread struct rcbp      *thread_rcbp_list        = NULL;
 
 
-struct cb        *gc_thread_cb            = NULL;
-struct cb_region  gc_thread_region;
-cb_offset_t       gc_thread_darkset_bst   = CB_BST_SENTINEL;
+struct cb_region  gc_thread_grayset_bst_region;
+cb_offset_t       gc_thread_grayset_bst   = CB_BST_SENTINEL;
 
 static std::thread gc_thread;
 static std::atomic<bool> gc_stop_flag(false);
@@ -1000,19 +999,6 @@ gc_init(void)
   gc.grayCountTotal = 0;
   gc.grayStack = CB_NULL;
 
-  struct cb_params cb_params = CB_PARAMS_DEFAULT;
-
-  // Create a cb for the GC to use.
-  cb_params.ring_size = 8388608 * 4;
-  cb_params.mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE;
-  cb_params.flags |= CB_PARAMS_F_MLOCK;
-  strncpy(cb_params.filename_prefix, "gc", sizeof(cb_params.filename_prefix));
-  gc_thread_cb = cb_create(&cb_params, sizeof(cb_params));
-  if (!gc_thread_cb) {
-    fprintf(stderr, "Could not create GC's scratch continuous buffer. \n");
-    return -1;
-  }
-
   // Spawn the GC thread.
   gc_thread = std::thread(gc_main_loop);
 
@@ -1589,20 +1575,13 @@ gc_perform(struct gc_request_response *rr)
 {
   int ret;
 
+  (void)ret;
+
   gc_phase = GC_PHASE_RESET_GC_STATE;
-  cb_rewind_to(gc_thread_cb, 0);
-  KLOX_TRACE("before GC region allocation\n");
-  ret = logged_region_create(&gc_thread_cb, &gc_thread_region, 1, 1024 * 1024, 0);
-  KLOX_TRACE("after GC region allocation\n");
-  if (ret != CB_SUCCESS)
-  {
-      fprintf(stderr, "Could not create GC region.\n");
-      assert(ret == CB_SUCCESS);
-      exit(EXIT_FAILURE);  //FIXME _exit()?
-  }
   gc.grayCount = 0;
   gc.grayCountTotal = 0;
   gc.grayStack = cb_region_start(&(rr->req.gc_gray_list_region));
+  gc_thread_grayset_bst_region = rr->req.gc_grayset_bst_region;
   clearDarkObjectSet();
 
   //NOTE: The compilation often hold objects in stack-based (the C language
