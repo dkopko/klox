@@ -171,7 +171,7 @@ static void objectSetDark(OID<Obj> objectOID) {
   ret = cb_bst_insert(&thread_cb,
                       &gc_thread_grayset_bst_region,
                       &gc_thread_grayset_bst,
-                      0,
+                      cb_region_start(&gc_thread_grayset_bst_region),
                       &key_term,
                       &value_term);
   assert(ret == 0);
