@@ -26,6 +26,7 @@ extern __thread bool       on_main_thread;
 
 typedef size_t (*structmap_value_size_t)(const struct cb *cb, uint64_t v);
 typedef int (*structmap_traverse_func_t)(uint64_t key, uint64_t value, void *closure);
+typedef int (*structmap_value_cmp_func_t)(uint64_t lhsvalue, uint64_t rhsvalue);
 
 
 enum structmap_amt_entry_type
@@ -216,6 +217,14 @@ struct structmap_amt
 
     return this->would_collide_node_count_slowpath(cb, key);
   }
+
+  static int
+  compare_node(const structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::node *lhs,
+               const structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::node *rhs,
+               structmap_value_cmp_func_t                              value_cmp);
+  int
+  compare(const structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS> &rhs,
+          structmap_value_cmp_func_t                        value_cmp) const;
 };
 
 template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
@@ -465,6 +474,12 @@ structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::traverse_node(const struct cb       
       case STRUCTMAP_AMT_ENTRY_ITEM:
         func(entrykeyof(entry), entry->value, closure);
         continue;
+
+#ifndef NDEBUG
+      default:
+        printf("Bogus structmap entry type: %d\n", entrytypeof(entry));
+        assert(false);
+#endif
     }
   }
 
@@ -496,6 +511,111 @@ structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::traverse(const struct cb           *
 #ifndef NDEBUG
       default:
         printf("Bogus structmap entry type: %d\n", entrytypeof(entry));
+        assert(false);
+#endif
+    }
+  }
+
+  return 0;
+}
+
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
+int
+structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::compare_node(const structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::node *lhs,
+                                                         const structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::node *rhs,
+                                                         structmap_value_cmp_func_t                              value_cmp)
+{
+  for (unsigned int i = 0; i < (1 << LEVEL_BITS); ++i) {
+    const struct structmap_amt_entry *lentry = &(lhs->entries[i]);
+    const struct structmap_amt_entry *rentry = &(rhs->entries[i]);
+
+    enum structmap_amt_entry_type ltype = entrytypeof(lentry);
+    enum structmap_amt_entry_type rtype = entrytypeof(rentry);
+
+    if (ltype < rtype) return -1;
+    if (ltype > rtype) return 1;
+
+    switch (ltype) {
+      case STRUCTMAP_AMT_ENTRY_NODE: {
+        const node *lnode = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(lentry));
+        const node *rnode = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(rentry));
+
+        int cmp = compare_node(lnode, rnode, value_cmp);
+        if (cmp < 0) return -1;
+        if (cmp > 0) return 1;
+
+        continue;
+      }
+
+      case STRUCTMAP_AMT_ENTRY_EMPTY:
+        continue;
+
+      case STRUCTMAP_AMT_ENTRY_ITEM: {
+        if (entrykeyof(lentry) < entrykeyof(rentry)) return -1;
+        if (entrykeyof(lentry) > entrykeyof(rentry)) return 1;
+
+        int cmp = value_cmp(lentry->value, rentry->value);
+        if (cmp < 0) return -1;
+        if (cmp > 0) return 1;
+
+        continue;
+      }
+
+#ifndef NDEBUG
+      default:
+        printf("Bogus structmap entry type: %d\n", entrytypeof(lentry));
+        assert(false);
+#endif
+    }
+  }
+
+  return 0;
+}
+
+template<unsigned int FIRSTLEVEL_BITS, unsigned int LEVEL_BITS>
+int
+structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::compare(const structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS> &rhs,
+                                                    structmap_value_cmp_func_t                        value_cmp) const
+{
+  for (unsigned int i = 0; i < (1 << FIRSTLEVEL_BITS); ++i) {
+    const struct structmap_amt_entry *lentry = &(this->entries[i]);
+    const struct structmap_amt_entry *rentry = &(rhs.entries[i]);
+
+    enum structmap_amt_entry_type ltype = entrytypeof(lentry);
+    enum structmap_amt_entry_type rtype = entrytypeof(rentry);
+
+    if (ltype < rtype) return -1;
+    if (ltype > rtype) return 1;
+
+    switch (ltype) {
+      case STRUCTMAP_AMT_ENTRY_NODE: {
+        const node *lnode = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(lentry));
+        const node *rnode = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(rentry));
+
+        int cmp = compare_node(lnode, rnode, value_cmp);
+        if (cmp < 0) return -1;
+        if (cmp > 0) return 1;
+
+        continue;
+      }
+
+      case STRUCTMAP_AMT_ENTRY_EMPTY:
+        continue;
+
+      case STRUCTMAP_AMT_ENTRY_ITEM: {
+        if (entrykeyof(lentry) < entrykeyof(rentry)) return -1;
+        if (entrykeyof(lentry) > entrykeyof(rentry)) return 1;
+
+        int cmp = value_cmp(lentry->value, rentry->value);
+        if (cmp < 0) return -1;
+        if (cmp > 0) return 1;
+
+        continue;
+      }
+
+#ifndef NDEBUG
+      default:
+        printf("Bogus structmap entry type: %d\n", entrytypeof(lentry));
         assert(false);
 #endif
     }

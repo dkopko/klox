@@ -548,53 +548,242 @@ resolveAsMutableLayer(ObjID objid)
   return layer_o;
 }
 
+static int klox_value_deep_cmp(Value lhs, Value rhs);
 
 static int
-klox_object_cmp(Value lhs, Value rhs)
+value_cmp(uint64_t lhs, uint64_t rhs)
 {
-  ObjType lhsType = OBJ_TYPE(lhs);
-  ObjType rhsType = OBJ_TYPE(rhs);
+  Value l;
+  Value r;
+  l.val = lhs;
+  r.val = rhs;
+  return klox_value_deep_cmp(l, r);
+}
 
-  if (lhsType < rhsType) return -1;
-  if (lhsType > rhsType) return 1;
+static int
+klox_object_deep_cmp(const Obj *lhs, const Obj *rhs)
+{
+  if (lhs->type < rhs->type) return -1;
+  if (lhs->type > rhs->type) return 1;
 
-  switch (lhsType) {
-    case OBJ_BOUND_METHOD:
-    case OBJ_CLASS:
-    case OBJ_CLOSURE:
-    case OBJ_FUNCTION:
-    case OBJ_INSTANCE:
-    case OBJ_NATIVE:
-    case OBJ_UPVALUE:
-      if (lhs.val < rhs.val) return -1;
-      if (lhs.val > rhs.val) return 1;
-      return 0;
+  switch (lhs->type) {
+    case OBJ_BOUND_METHOD: {
+      const ObjBoundMethod *l = (const ObjBoundMethod*)lhs;
+      const ObjBoundMethod *r = (const ObjBoundMethod*)rhs;
 
-    case OBJ_STRING: {
-      ObjString *lhsString = (ObjString *)AS_OBJ(lhs);
-      ObjString *rhsString = (ObjString *)AS_OBJ(rhs);
-      int shorterLength = lhsString->length < rhsString->length ? lhsString->length : rhsString->length;
-      int ret;
+      if (l->method.id().id < r->method.id().id) return -1;
+      if (l->method.id().id > r->method.id().id) return 1;
 
-      ret = memcmp(lhsString->chars.clp().cp(), rhsString->chars.clp().cp(), shorterLength);
-      if (ret < 0) return -1;
-      if (ret > 0) return 1;
-      if (lhsString->length < rhsString->length) return -1;
-      if (lhsString->length > rhsString->length) return 1;
+      return klox_value_deep_cmp(l->receiver, r->receiver);
+    }
+
+    case OBJ_CLASS: {
+      const ObjClass *l = (const ObjClass*)lhs;
+      const ObjClass *r = (const ObjClass*)rhs;
+
+      if (l->name.id().id < r->name.id().id) return -1;
+      if (l->name.id().id > r->name.id().id) return 1;
+
+      if (l->superclass.id().id < r->superclass.id().id) return -1;
+      if (l->superclass.id().id > r->superclass.id().id) return 1;
+
+      return l->methods_sm.compare(r->methods_sm, &value_cmp);
+    }
+
+    case OBJ_CLOSURE: {
+      const ObjClosure *l = (const ObjClosure*)lhs;
+      const ObjClosure *r = (const ObjClosure*)rhs;
+      int cmp;
+
+      if (l->function.id().id < r->function.id().id) return -1;
+      if (l->function.id().id > r->function.id().id) return 1;
+
+      if (l->upvalueCount < r->upvalueCount) return -1;
+      if (l->upvalueCount > r->upvalueCount) return 1;
+
+      cmp = memcmp(l->upvalues.clp().cp(), r->upvalues.clp().cp(), l->upvalueCount * sizeof(OID<ObjUpvalue>));
+      if (cmp < 0) return -1;
+      if (cmp > 0) return 1;
+
       return 0;
     }
 
+    case OBJ_FUNCTION: {
+      const ObjFunction *l = (const ObjFunction*)lhs;
+      const ObjFunction *r = (const ObjFunction*)rhs;
+      int cmp;
+
+      if (l->arity < r->arity) return -1;
+      if (l->arity > r->arity) return 1;
+
+      if (l->upvalueCount < r->upvalueCount) return -1;
+      if (l->upvalueCount > r->upvalueCount) return 1;
+
+      if (l->name.id().id < r->name.id().id) return -1;
+      if (l->name.id().id > r->name.id().id) return 1;
+
+      if (l->chunk.count < r->chunk.count) return -1;
+      if (l->chunk.count > r->chunk.count) return 1;
+
+      cmp = memcmp(l->chunk.code.clp().cp(), r->chunk.code.clp().cp(), l->chunk.count * sizeof(uint8_t));
+      if (cmp < 0) return -1;
+      if (cmp > 0) return -1;
+
+      cmp = memcmp(l->chunk.lines.clp().cp(), r->chunk.lines.clp().cp(), l->chunk.count * sizeof(int));
+      if (cmp < 0) return -1;
+      if (cmp > 0) return -1;
+
+      if (l->chunk.constants.count < r->chunk.constants.count) return -1;
+      if (l->chunk.constants.count > r->chunk.constants.count) return 1;
+
+      const Value *lv = l->chunk.constants.values.clp().cp();
+      const Value *rv = r->chunk.constants.values.clp().cp();
+      for (int i = 0; i < l->chunk.constants.count; ++i) {
+        cmp = klox_value_deep_cmp(lv[i], rv[i]);
+        if (cmp != 0) return cmp;
+      }
+
+      return 0;
+    }
+
+    case OBJ_INSTANCE: {
+      const ObjInstance *l = (const ObjInstance*)lhs;
+      const ObjInstance *r = (const ObjInstance*)rhs;
+
+      if (l->klass.id().id < r->klass.id().id) return -1;
+      if (l->klass.id().id > r->klass.id().id) return 1;
+
+      return l->fields_sm.compare(r->fields_sm, &value_cmp);
+    }
+
+    case OBJ_NATIVE: {
+      const ObjNative *l = (const ObjNative*)lhs;
+      const ObjNative *r = (const ObjNative*)rhs;
+
+      if (l->function < r->function) return -1;
+      if (l->function > r->function) return 1;
+
+      return 0;
+    }
+
+    case OBJ_STRING: {
+      const ObjString *l = (const ObjString *)lhs;
+      const ObjString *r = (const ObjString *)rhs;
+
+      int shorterLength = l->length < r->length ? l->length : r->length;
+      int cmp = memcmp(l->chars.clp().cp(), r->chars.clp().cp(), shorterLength);
+      if (cmp < 0) return -1;
+      if (cmp > 0) return 1;
+
+      if (l->length < r->length) return -1;
+      if (l->length > r->length) return 1;
+
+      return 0;
+    }
+#if 0
+    //FIXME is this alternate formulation appropriate?  It short-cuts by checking length and hash first, but gives a non-lexicographic ordering.
+    case OBJ_STRING: {
+      const ObjString *l = (ObjString*)lhsObj.clp().cp();
+      const ObjString *r = (ObjString*)rhsObj.clp().cp();
+      int cmp;
+
+      if (l->length < r->length) return -1;
+      if (l->length > r->length) return -1;
+
+      if (l->hash < r->hash) return -1;
+      if (l->hash > r->hash) return -1;
+
+      cmp = memcmp(l->chars.clp().cp(), r->chars.clp().cp(), l->length);
+      if (cmp < 0) return -1;
+      if (cmp > 0) return 1;
+
+      return 0;
+    }
+#endif
+
+    case OBJ_UPVALUE: {
+      const ObjUpvalue *l = (const ObjUpvalue*)lhs;
+      const ObjUpvalue *r = (const ObjUpvalue*)rhs;
+
+      if (l->valueStackIndex < r->valueStackIndex) return -1;
+      if (l->valueStackIndex > r->valueStackIndex) return 1;
+
+      if (l->next.id().id < r->next.id().id) return -1;
+      if (l->next.id().id > r->next.id().id) return 1;
+
+      if (l->valueStackIndex == -1)
+        return klox_value_deep_cmp(l->closed, r->closed);
+      else
+        return 0;
+    }
+
     default:
-      assert(lhsType == OBJ_BOUND_METHOD
-             || lhsType == OBJ_CLASS
-             || lhsType == OBJ_CLOSURE
-             || lhsType == OBJ_FUNCTION
-             || lhsType == OBJ_INSTANCE
-             || lhsType == OBJ_NATIVE
-             || lhsType == OBJ_STRING
-             || lhsType == OBJ_UPVALUE);
+      assert(lhs->type == OBJ_BOUND_METHOD
+             || lhs->type == OBJ_CLASS
+             || lhs->type == OBJ_CLOSURE
+             || lhs->type == OBJ_FUNCTION
+             || lhs->type == OBJ_INSTANCE
+             || lhs->type == OBJ_NATIVE
+             || lhs->type == OBJ_STRING
+             || lhs->type == OBJ_UPVALUE);
       return 0;
   }
+}
+
+static int
+klox_value_deep_cmp(Value lhs, Value rhs)
+{
+  ValueType lhs_valtype = getValueType(lhs);
+  ValueType rhs_valtype = getValueType(rhs);
+
+  if (lhs_valtype < rhs_valtype) return -1;
+  if (lhs_valtype > rhs_valtype) return 1;
+
+  switch (lhs_valtype) {
+    case VAL_BOOL:
+      return (int)AS_BOOL(lhs) - (int)AS_BOOL(rhs);
+
+    case VAL_NIL:
+      //NOTE: All NILs are equal (of course).
+      return 0;
+
+    case VAL_NUMBER: {
+      double lhs_num = AS_NUMBER(lhs);
+      double rhs_num = AS_NUMBER(rhs);
+      if (lhs_num < rhs_num) return -1;
+      if (lhs_num > rhs_num) return 1;
+      //NOTE: This comparator should rely on bitwise comparison when the doubles
+      // are not less than and not greater than one another, just in case we are
+      // in weird NaN territory.
+      if (lhs.val < rhs.val) return -1;
+      if (lhs.val > rhs.val) return 1;
+      return 0;
+    }
+
+    case VAL_OBJ:
+      return klox_object_deep_cmp(AS_OBJ(lhs), AS_OBJ(rhs));
+
+    default:
+      assert(lhs_valtype == VAL_BOOL
+             || lhs_valtype == VAL_NIL
+             || lhs_valtype == VAL_NUMBER
+             || lhs_valtype == VAL_OBJ);
+      return 0;
+  }
+}
+
+int
+klox_obj_at_offset_deep_comparator(const struct cb *cb,
+                                   const struct cb_term *lhs,
+                                   const struct cb_term *rhs)
+{
+  cb_offset_t lhs_offset = cb_term_get_u64(lhs);
+  cb_offset_t rhs_offset = cb_term_get_u64(rhs);
+
+  CBO<Obj> lhsObj = lhs_offset;
+  CBO<Obj> rhsObj = rhs_offset;
+
+  return klox_object_deep_cmp(lhsObj.clp().cp(), rhsObj.clp().cp());
 }
 
 //NOTE: This variant is suitable for comparing strings, pre-interning.
@@ -610,43 +799,7 @@ klox_value_deep_comparator(const struct cb *cb,
   Value lhs_val = numToValue(cb_term_get_dbl(lhs));
   Value rhs_val = numToValue(cb_term_get_dbl(rhs));
 
-  ValueType lhs_valtype = getValueType(lhs_val);
-  ValueType rhs_valtype = getValueType(rhs_val);
-
-  if (lhs_valtype < rhs_valtype) return -1;
-  if (lhs_valtype > rhs_valtype) return 1;
-
-  switch (lhs_valtype) {
-    case VAL_BOOL:
-      return (int)AS_BOOL(lhs_val) - (int)AS_BOOL(rhs_val);
-
-    case VAL_NIL:
-      //NOTE: All NILs are equal (of course).
-      return 0;
-
-    case VAL_NUMBER: {
-      double lhs_num = AS_NUMBER(lhs_val);
-      double rhs_num = AS_NUMBER(rhs_val);
-      if (lhs_num < rhs_num) return -1;
-      if (lhs_num > rhs_num) return 1;
-      //NOTE: This comparator should rely on bitwise comparison when the doubles
-      // are not less than and not greater than one another, just in case we are
-      // in weird NaN territory.
-      if (lhs_val.val < rhs_val.val) return -1;
-      if (lhs_val.val > rhs_val.val) return 1;
-      return 0;
-    }
-
-    case VAL_OBJ:
-      return klox_object_cmp(lhs_val, rhs_val);
-
-    default:
-      assert(lhs_valtype == VAL_BOOL
-             || lhs_valtype == VAL_NIL
-             || lhs_valtype == VAL_NUMBER
-             || lhs_valtype == VAL_OBJ);
-      return 0;
-  }
+  return klox_value_deep_cmp(lhs_val, rhs_val);
 }
 
 
@@ -692,9 +845,9 @@ klox_value_shallow_comparator(const struct cb *cb,
 //NOTE: This variant would be used when deeply comparing BSTs (via cb_bst_cmp()),
 //  on BSTs where the values are the same as the keys.
 int
-klox_value_null_comparator(const struct cb *cb,
-                           const struct cb_term *lhs,
-                           const struct cb_term *rhs)
+klox_null_comparator(const struct cb *cb,
+                     const struct cb_term *lhs,
+                     const struct cb_term *rhs)
 {
   return 0;
 }
@@ -1164,11 +1317,12 @@ copy_objtable_b(uint64_t  key,
 
   bool did_dedupe = !newly_white && dedupeObject(&offset);
   if (did_dedupe) {
-    printf("DANDEBUG found object in dedupeset.\n");
+    //printf("DANDEBUG found object in dedupeset.\n");
     dest_offset = offset;
   }
   else {
     dest_offset = cloneObject(&(cl->dest_cb), cl->dest_region, obj_id, offset);
+    addToDedupeObjectSet(dest_offset);
   }
 
   DEBUG_ONLY(cb_offset_t c0a = cb_region_cursor(cl->dest_region));
@@ -1336,10 +1490,11 @@ copy_objtable_c_not_in_b(uint64_t  key,
 
     bool did_dedupe = !newly_white && dedupeObject(&dest_offset);
     if (did_dedupe) {
-      printf("DANDEBUG found object in dedupeset.\n");
+      //printf("DANDEBUG found object in dedupeset.\n");
     }
     else {
       dest_offset = cloneObject(&(cl->dest_cb), cl->dest_region, objOID.id(), cEntryOffset);
+      addToDedupeObjectSet(dest_offset);
     }
 
     DEBUG_ONLY(cb_offset_t c0a = cb_region_cursor(cl->dest_region));

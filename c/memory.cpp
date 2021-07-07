@@ -386,10 +386,10 @@ void clearDedupeObjectSet(void) {
   ret = cb_bst_init(&thread_cb,
                     &gc_thread_dedupeset_bst_region,
                     &gc_thread_dedupeset_bst,
-                    &klox_value_deep_comparator,
-                    &klox_value_null_comparator,
-                    &klox_value_render,
-                    &klox_value_render,
+                    &klox_obj_at_offset_deep_comparator,
+                    &klox_null_comparator,
+                    &klox_value_render,  //FIXME does not contain values, so this is wrong
+                    &klox_value_render,  //FIXME does not contain values, so this is wrong
                     &klox_no_external_size,
                     &klox_no_external_size);
   assert(ret == 0);
@@ -842,8 +842,8 @@ void freezeARegions(cb_offset_t new_lower_bound) {
   ret = cb_bst_init(&thread_cb,
                     &thread_region,
                     &(vm.globals.root_a),
-                    &klox_value_deep_comparator,
-                    &klox_value_deep_comparator,
+                    &klox_value_deep_comparator, //FIXME klox_value_shallow_comparator?
+                    &klox_value_deep_comparator, //FIXME klox_value_shallow_comparator?
                     &klox_value_render,
                     &klox_value_render,
                     &klox_no_external_size,

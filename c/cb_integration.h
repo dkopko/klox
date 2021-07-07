@@ -441,6 +441,11 @@ klox_no_external_size2(const struct cb *cb,
                        uint64_t         offset);
 
 int
+klox_obj_at_offset_deep_comparator(const struct cb *cb,
+                                   const struct cb_term *lhs,
+                                   const struct cb_term *rhs);
+
+int
 klox_value_deep_comparator(const struct cb *cb,
                            const struct cb_term *lhs,
                            const struct cb_term *rhs);
@@ -451,9 +456,9 @@ klox_value_shallow_comparator(const struct cb *cb,
                               const struct cb_term *rhs);
 
 int
-klox_value_null_comparator(const struct cb *cb,
-                           const struct cb_term *lhs,
-                           const struct cb_term *rhs);
+klox_null_comparator(const struct cb *cb,
+                     const struct cb_term *lhs,
+                     const struct cb_term *rhs);
 
 int
 klox_value_render(cb_offset_t           *dest_offset,
