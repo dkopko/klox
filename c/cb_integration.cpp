@@ -1317,7 +1317,9 @@ copy_objtable_b(uint64_t  key,
 
   bool did_dedupe = !newly_white && dedupeObject(&offset);
   if (did_dedupe) {
-    //printf("DANDEBUG found object in dedupeset.\n");
+    Obj *existing = (Obj*)cb_at(thread_cb, offset);
+    size_t bytes_saved = klox_Obj_external_size(thread_cb, existing);
+    KLOX_TRACE("#%ju deduped to @%ju (type: %d, bytes saved: %zu)\n", (uintmax_t)obj_id.id, (uintmax_t)offset, existing->type, bytes_saved);
     dest_offset = offset;
   }
   else {
@@ -1490,7 +1492,9 @@ copy_objtable_c_not_in_b(uint64_t  key,
 
     bool did_dedupe = !newly_white && dedupeObject(&dest_offset);
     if (did_dedupe) {
-      //printf("DANDEBUG found object in dedupeset.\n");
+      Obj *existing = (Obj*)cb_at(thread_cb, dest_offset);
+      size_t bytes_saved = klox_Obj_external_size(thread_cb, existing);
+      KLOX_TRACE("#%ju deduped to @%ju (type: %d, bytes saved: %zu)\n", (uintmax_t)objOID.id().id, (uintmax_t)dest_offset, existing->type, bytes_saved);
     }
     else {
       dest_offset = cloneObject(&(cl->dest_cb), cl->dest_region, objOID.id(), cEntryOffset);
