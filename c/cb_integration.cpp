@@ -1319,6 +1319,7 @@ copy_objtable_b(uint64_t  key,
   if (did_dedupe) {
     Obj *existing = (Obj*)cb_at(thread_cb, offset);
     size_t bytes_saved = klox_Obj_external_size(thread_cb, existing);
+    (void)bytes_saved;
     KLOX_TRACE("#%ju deduped to @%ju (type: %d, bytes saved: %zu)\n", (uintmax_t)obj_id.id, (uintmax_t)offset, existing->type, bytes_saved);
     dest_offset = offset;
   }
@@ -1494,6 +1495,7 @@ copy_objtable_c_not_in_b(uint64_t  key,
     if (did_dedupe) {
       Obj *existing = (Obj*)cb_at(thread_cb, dest_offset);
       size_t bytes_saved = klox_Obj_external_size(thread_cb, existing);
+      (void)bytes_saved;
       KLOX_TRACE("#%ju deduped to @%ju (type: %d, bytes saved: %zu)\n", (uintmax_t)objOID.id().id, (uintmax_t)dest_offset, existing->type, bytes_saved);
     }
     else {
