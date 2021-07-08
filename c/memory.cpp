@@ -378,6 +378,17 @@ void grayObjectLeaves(const OID<Obj> objectOID) {
   }
 }
 
+static int
+dedupe_entry_render(cb_offset_t           *dest_offset,
+                    struct cb            **cb,
+                    const struct cb_term  *term,
+                    unsigned int           flags)
+{
+  // We expect to only use the double value of cb_terms.
+  assert(term->tag == CB_TERM_U64);
+  return cb_asprintf(dest_offset, cb, "@%ju", (uintmax_t)cb_term_get_u64(term));
+}
+
 void clearDedupeObjectSet(void) {
   int ret;
 
@@ -388,8 +399,8 @@ void clearDedupeObjectSet(void) {
                     &gc_thread_dedupeset_bst,
                     &klox_obj_at_offset_deep_comparator,
                     &klox_null_comparator,
-                    &klox_value_render,  //FIXME does not contain values, so this is wrong
-                    &klox_value_render,  //FIXME does not contain values, so this is wrong
+                    &dedupe_entry_render,
+                    &dedupe_entry_render,
                     &klox_no_external_size,
                     &klox_no_external_size);
   assert(ret == 0);
