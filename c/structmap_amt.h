@@ -81,7 +81,7 @@ struct structmap_amt
   struct node
   {
       struct structmap_amt_entry entries[1 << LEVEL_BITS];
-  };
+  } __attribute__ ((aligned (64)));
 
   // The maximum amount structmap_nodes we may need for a modification (insertion)
   // This is ceil((64 - FIRSTLEVEL_BITS) / LEVEL_BITS).
