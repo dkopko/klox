@@ -76,6 +76,7 @@ OID<ObjClass> newClass(OID<ObjString> name) {
   CBO<ObjClass> klassCBO = ALLOCATE_OBJ(ObjClass, OBJ_CLASS);
   ObjClass* klass = klassCBO.mlp().mp();  //cb-resize-safe (no allocations in lifetime)
   klass->name = name;
+  klass->superclass = CB_NULL_OID;
   ret = methods_layer_init(&thread_cb, &thread_region, &(klass->methods_sm));
   assert(ret == 0);
 
