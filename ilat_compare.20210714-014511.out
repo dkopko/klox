@@ -1,0 +1,73 @@
+Crafting Interpreters commit: e8056ccd
+CB Commit:                    344a49c
+Klox Commit:                  5ffbe41
+
+CB local Changes:
+diff --git a/src/cb.c b/src/cb.c
+index 9c00ec1..566bf36 100644
+--- a/src/cb.c
++++ b/src/cb.c
+@@ -511,8 +511,9 @@ mmap_retry:
+     if (cb->params.flags & CB_PARAMS_F_MLOCK)
+     {
+         ret = mlock(cb, header_size);
+-        if (ret == -1)
+-            cb_log_errno("mlock(%d) failed.", fd);
++        if (ret == -1) {
++            //cb_log_errno("mlock(%d) failed.", fd);
++        }
+     }
+ 
+     /* Prefault ring pages. */
+
+Klox Changes:
+diff --git a/c/CMakeLists.txt b/c/CMakeLists.txt
+index 7444303..50cbff6 100644
+--- a/c/CMakeLists.txt
++++ b/c/CMakeLists.txt
+@@ -29,7 +29,7 @@ include_directories(
+   "${XXHASH_INCLUDE}"
+ )
+ 
+-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GNU_SOURCE -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -DKLOX_ILAT=0")
++set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GNU_SOURCE -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -DKLOX_ILAT=1")
+ 
+ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -DKLOX_TRACE_ENABLE=1 -DKLOX_SYNC_GC=1 -DPROVOKE_RESIZE_DURING_GC=1 -DDEBUG_PRINT_CODE -DDEBUG_STRESS_GC -DDEBUG_TRACE_EXECUTION -DDEBUG_TRACE_GC -DDEBUG_CLOBBER -DCB_ASSERT_ON -DCB_HEAVY_ASSERT_ON")
+ 
+OP_INVOKE            lat:       75.5 ->      264.7 (+   250.5 %), Runtime%:  17.5 (+  9.7), AbsRuntime:  24593582980 (+   250.5 %)
+OP_POP               lat:       25.8 ->       23.2 (-    10.1 %), Runtime%:  12.1 (-  8.9), AbsRuntime:  17053609960 (-    10.1 %)
+OP_CONSTANT          lat:       26.7 ->       26.8 (+     0.2 %), Runtime%:  11.3 (-  6.3), AbsRuntime:  15920016520 (+     0.2 %)
+OP_GET_PROPERTY      lat:       44.9 ->      101.2 (+   125.4 %), Runtime%:  10.0 (+  3.1), AbsRuntime:  14069303340 (+   125.4 %)
+OP_GET_GLOBAL        lat:       30.9 ->       96.3 (+   211.8 %), Runtime%:   8.2 (+  4.1), AbsRuntime:  11485070980 (+   211.8 %)
+OP_SET_GLOBAL        lat:       42.5 ->      348.2 (+   718.9 %), Runtime%:   6.1 (+  4.9), AbsRuntime:   8603748740 (+   718.9 %)
+OP_EQUAL             lat:       26.7 ->       35.5 (+    33.0 %), Runtime%:   6.0 (-  1.1), AbsRuntime:   8486099980 (+    33.0 %)
+OP_RETURN            lat:       27.2 ->       53.9 (+    98.3 %), Runtime%:   4.8 (+  1.0), AbsRuntime:   6733731096 (+    98.3 %)
+OP_GET_LOCAL         lat:       25.1 ->       24.4 (-     2.7 %), Runtime%:   3.9 (-  2.4), AbsRuntime:   5490038904 (-     2.7 %)
+OP_TRUE              lat:       28.5 ->       28.5 (+     0.1 %), Runtime%:   3.6 (-  2.0), AbsRuntime:   5132829560 (+     0.1 %)
+OP_NIL               lat:       29.3 ->       28.5 (-     2.7 %), Runtime%:   3.5 (-  2.1), AbsRuntime:   4988193700 (-     2.7 %)
+OP_CALL              lat:       51.5 ->      139.5 (+   171.0 %), Runtime%:   3.1 (+  1.3), AbsRuntime:   4414534240 (+   171.0 %)
+OP_ADD               lat:       28.7 ->       43.7 (+    52.3 %), Runtime%:   3.0 (-  0.1), AbsRuntime:   4203289480 (+    52.3 %)
+OP_JUMP_IF_FALSE     lat:       26.6 ->       34.1 (+    28.3 %), Runtime%:   2.5 (-  0.5), AbsRuntime:   3522163660 (+    28.3 %)
+OP_LESS              lat:       27.3 ->       41.2 (+    51.0 %), Runtime%:   1.6 (-  0.1), AbsRuntime:   2216343500 (+    51.0 %)
+OP_SUBTRACT          lat:       23.1 ->       38.8 (+    68.0 %), Runtime%:   0.8 (+  0.1), AbsRuntime:   1182540060 (+    68.0 %)
+OP_SET_PROPERTY      lat:      222.1 ->      268.9 (+    21.1 %), Runtime%:   0.8 (-  0.2), AbsRuntime:   1087259920 (+    21.1 %)
+OP_LOOP              lat:       31.0 ->       34.3 (+    10.5 %), Runtime%:   0.6 (-  0.2), AbsRuntime:    792237360 (+    10.5 %)
+OP_FALSE             lat:       30.8 ->       31.7 (+     2.9 %), Runtime%:   0.4 (-  0.2), AbsRuntime:    633526160 (+     2.9 %)
+OP_PRINT             lat:    21348.4 ->   177190.3 (+   730.0 %), Runtime%:   0.1 (+  0.1), AbsRuntime:     89835500 (+   730.0 %)
+OP_NOT               lat:       31.7 ->       38.4 (+    21.3 %), Runtime%:   0.1 (-  0.0), AbsRuntime:     89677720 (+    21.3 %)
+OP_SUPER_INVOKE      lat:       62.2 ->      158.0 (+   154.2 %), Runtime%:   0.0 (+  0.0), AbsRuntime:     52667300 (+   154.2 %)
+OP_GREATER           lat:       26.2 ->       50.1 (+    91.4 %), Runtime%:   0.0 (+  0.0), AbsRuntime:     29524440 (+    91.4 %)
+OP_GET_UPVALUE       lat:       41.8 ->       63.8 (+    52.5 %), Runtime%:   0.0 (-  0.0), AbsRuntime:     21273020 (+    52.5 %)
+OP_JUMP              lat:       30.3 ->       31.0 (+     2.2 %), Runtime%:   0.0 (-  0.0), AbsRuntime:     21104460 (+     2.2 %)
+OP_SET_LOCAL         lat:       29.4 ->       28.9 (-     1.6 %), Runtime%:   0.0 (-  0.0), AbsRuntime:      7251060 (-     1.6 %)
+OP_CLOSURE           lat:      898.9 ->     2138.5 (+   137.9 %), Runtime%:   0.0 (+  0.0), AbsRuntime:       583820 (+   137.9 %)
+OP_DEFINE_GLOBAL     lat:      367.0 ->     1502.3 (+   309.4 %), Runtime%:   0.0 (+  0.0), AbsRuntime:       408620 (+   309.4 %)
+OP_METHOD            lat:      312.9 ->     1655.4 (+   429.0 %), Runtime%:   0.0 (+  0.0), AbsRuntime:       276460 (+   429.0 %)
+OP_CLASS             lat:      457.4 ->      973.3 (+   112.8 %), Runtime%:   0.0 (+  0.0), AbsRuntime:        96360 (+   112.8 %)
+OP_NEGATE            lat:       36.4 ->       78.9 (+   116.5 %), Runtime%:   0.0 (+  0.0), AbsRuntime:        54340 (+   116.5 %)
+OP_INHERIT           lat:      644.8 ->     1521.6 (+   136.0 %), Runtime%:   0.0 (+  0.0), AbsRuntime:        38040 (+   136.0 %)
+OP_CLOSE_UPVALUE     lat:      104.4 ->      504.4 (+   383.2 %), Runtime%:   0.0 (+  0.0), AbsRuntime:        16140 (+   383.2 %)
+OP_MULTIPLY          lat:      167.8 ->      457.8 (+   172.8 %), Runtime%:   0.0 (+  0.0), AbsRuntime:         8240 (+   172.8 %)
+OP_DIVIDE            lat:      293.3 ->      644.4 (+   119.7 %), Runtime%:   0.0 (+  0.0), AbsRuntime:         5800 (+   119.7 %)
+OP_SET_UPVALUE       lat:      184.0 ->      408.0 (+   121.7 %), Runtime%:   0.0 (+  0.0), AbsRuntime:         2040 (+   121.7 %)
+OP_GET_SUPER         lat:     1540.0 ->      940.0 (-    39.0 %), Runtime%:   0.0 (-  0.0), AbsRuntime:          940 (-    39.0 %)
