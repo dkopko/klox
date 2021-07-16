@@ -16,8 +16,7 @@
 
 #define CB_NULL ((cb_offset_t)0)
 
-extern __thread void      *thread_ring_start;
-extern __thread cb_mask_t  thread_ring_mask;
+extern __thread struct cb_at_immed_param_t thread_cb_at_immed_param;
 extern __thread bool       on_main_thread;
 
 //NOTES:
@@ -174,7 +173,7 @@ struct structmap_amt
 
     unsigned int key_route_base = FIRSTLEVEL_BITS;
     while (entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_NODE) {
-        const node *child_node = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(entry));
+        const node *child_node = (node *)cb_at_immed(&thread_cb_at_immed_param, entryoffsetof(entry));
         unsigned int child_route = (key >> key_route_base) & ((1 << LEVEL_BITS) - 1);
         entry = &(child_node->entries[child_route]);
         assert(entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_NODE || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_EMPTY || entrytypeof(entry) == STRUCTMAP_AMT_ENTRY_ITEM);
@@ -463,7 +462,7 @@ structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::traverse_node(const struct cb       
     const struct structmap_amt_entry *entry = &(n->entries[i]);
     switch (entrytypeof(entry)) {
       case STRUCTMAP_AMT_ENTRY_NODE: {
-        const node *child_node = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(entry));
+        const node *child_node = (node *)cb_at_immed(&thread_cb_at_immed_param, entryoffsetof(entry));
         traverse_node(cb, func, closure, child_node);
         break;
       }
@@ -496,7 +495,7 @@ structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::traverse(const struct cb           *
     const struct structmap_amt_entry *entry = &(this->entries[i]);
     switch (entrytypeof(entry)) {
       case STRUCTMAP_AMT_ENTRY_NODE: {
-        const node *child_node = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(entry));
+        const node *child_node = (node *)cb_at_immed(&thread_cb_at_immed_param, entryoffsetof(entry));
         traverse_node(cb, func, closure, child_node);
         break;
       }
@@ -537,8 +536,8 @@ structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::compare_node(const structmap_amt<FIR
 
     switch (ltype) {
       case STRUCTMAP_AMT_ENTRY_NODE: {
-        const node *lnode = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(lentry));
-        const node *rnode = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(rentry));
+        const node *lnode = (node *)cb_at_immed(&thread_cb_at_immed_param, entryoffsetof(lentry));
+        const node *rnode = (node *)cb_at_immed(&thread_cb_at_immed_param, entryoffsetof(rentry));
 
         int cmp = compare_node(lnode, rnode, value_cmp);
         if (cmp < 0) return -1;
@@ -589,8 +588,8 @@ structmap_amt<FIRSTLEVEL_BITS, LEVEL_BITS>::compare(const structmap_amt<FIRSTLEV
 
     switch (ltype) {
       case STRUCTMAP_AMT_ENTRY_NODE: {
-        const node *lnode = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(lentry));
-        const node *rnode = (node *)cb_at_immed(thread_ring_start, thread_ring_mask, entryoffsetof(rentry));
+        const node *lnode = (node *)cb_at_immed(&thread_cb_at_immed_param, entryoffsetof(lentry));
+        const node *rnode = (node *)cb_at_immed(&thread_cb_at_immed_param, entryoffsetof(rentry));
 
         int cmp = compare_node(lnode, rnode, value_cmp);
         if (cmp < 0) return -1;

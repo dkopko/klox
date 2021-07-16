@@ -16,8 +16,7 @@
 #include <thread>
 
 __thread struct cb        *thread_cb            = NULL;
-__thread void             *thread_ring_start;
-__thread cb_mask_t         thread_ring_mask;
+__thread struct cb_at_immed_param_t thread_cb_at_immed_param;
 __thread struct cb_region  thread_region;
 __thread cb_offset_t       thread_cutoff_offset = (cb_offset_t)0ULL;
 __thread struct ObjTable   thread_objtable;
@@ -1031,8 +1030,8 @@ klox_on_cb_resize(struct cb *old_cb, struct cb *new_cb)
 #endif //DEBUG_CLOBBER
 #endif //KLOX_SYNC_GC
 
-  thread_ring_start = cb_ring_start(new_cb);
-  thread_ring_mask = cb_ring_mask(new_cb);
+  thread_cb_at_immed_param.ring_start = cb_ring_start(new_cb);
+  thread_cb_at_immed_param.ring_mask = cb_ring_mask(new_cb);
   is_resizing = false;
 
   KLOX_TRACE("~~~~~RESIZE COMPLETE~~~~~\n");
@@ -1120,8 +1119,8 @@ gc_main_loop(void)
 
     // Make the threadlocal cb the target cb.
     thread_cb = curr_request->req.orig_cb;
-    thread_ring_start = cb_ring_start(thread_cb);
-    thread_ring_mask  = cb_ring_mask(thread_cb);
+    thread_cb_at_immed_param.ring_start = cb_ring_start(thread_cb);
+    thread_cb_at_immed_param.ring_mask  = cb_ring_mask(thread_cb);
 
     // Make the threadlocal ObjTable resolve toward the target's frozen B and C layers.
     DEBUG_ONLY(struct cb *cb0 = curr_request->req.orig_cb);

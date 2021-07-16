@@ -101,8 +101,8 @@ int main(int argc, const char* argv[]) {
     fprintf(stderr, "Could not create continuous buffer. \n");
     return EXIT_FAILURE;
   }
-  thread_ring_start = cb_ring_start(thread_cb);
-  thread_ring_mask = cb_ring_mask(thread_cb);
+  thread_cb_at_immed_param.ring_start = cb_ring_start(thread_cb);
+  thread_cb_at_immed_param.ring_mask = cb_ring_mask(thread_cb);
 
   /* Make one allocation to preserve CB_NULL == (cb_offset_t)0. */
   {

@@ -38,7 +38,7 @@ typedef struct { uint64_t val; } Value;
 #define AS_BOOL(v)    (((v).val) == TRUE_VAL.val)
 #define AS_NUMBER(v)  valueToNum(v)
 #define AS_OBJ_ID(v)     ((ObjID) { ((v).val) & ~(SIGN_BIT | QNAN) })
-#define AS_OBJ(v)     ((Obj*)cb_at_immed(thread_ring_start, thread_ring_mask, objtable_lookup(&thread_objtable, AS_OBJ_ID(v))))
+#define AS_OBJ(v)     ((Obj*)cb_at_immed(&thread_cb_at_immed_param, objtable_lookup(&thread_objtable, AS_OBJ_ID(v))))
 
 #define BOOL_VAL(boolean) ((Value) { ((boolean) ? TRUE_VAL : FALSE_VAL) })
 #define FALSE_VAL         ((Value) { (uint64_t)(QNAN | TAG_FALSE) })

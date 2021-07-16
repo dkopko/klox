@@ -40,7 +40,7 @@ tristack_reset(TriStack *ts) {
 
   ts->abo = new_offset;
   ts->abi = 0;
-  ts->adirect = (Value*)cb_at_immed(thread_ring_start, thread_ring_mask, new_offset);
+  ts->adirect = (Value*)cb_at_immed(&thread_cb_at_immed_param, new_offset);
   ts->bbo = CB_NULL;
   ts->bbi = 0;
   ts->bdirect = 0;
@@ -133,7 +133,7 @@ triframes_reset(TriFrames *tf) {
 
   tf->abo = new_offset;
   tf->abi = 0;
-  tf->adirect = (CallFrame*)cb_at_immed(thread_ring_start, thread_ring_mask, new_offset);
+  tf->adirect = (CallFrame*)cb_at_immed(&thread_cb_at_immed_param, new_offset);
   tf->bbo = CB_NULL;
   tf->bbi = 0;
   tf->bdirect = 0;

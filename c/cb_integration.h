@@ -13,8 +13,7 @@
 
 // VM thread state.
 extern __thread struct cb        *thread_cb;
-extern __thread void             *thread_ring_start;
-extern __thread cb_mask_t         thread_ring_mask;
+extern __thread struct cb_at_immed_param_t thread_cb_at_immed_param;
 extern __thread struct cb_region  thread_region;
 extern __thread cb_offset_t       thread_cutoff_offset;
 extern __thread struct ObjTable   thread_objtable;
@@ -104,7 +103,7 @@ struct cbp
   struct cb   *cb_;
 
   cbp(cb_offset_t offset)
-    : pointer_(offset == CB_NULL ? NULL : cb_at_immed(thread_ring_start, thread_ring_mask, offset)),
+    : pointer_(offset == CB_NULL ? NULL : cb_at_immed(&thread_cb_at_immed_param, offset)),
       offset_(offset),
       cb_(thread_cb)
   { }
