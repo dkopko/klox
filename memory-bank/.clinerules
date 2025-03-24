@@ -1,0 +1,59 @@
+# klox Project Rules and Patterns
+
+## Project Overview
+- klox is a fork of clox interpreter with O(1) garbage collection
+- Primary innovation: tri-partite memory model (A/B/C regions)
+- Key tradeoff: O(1) GC and allocation vs O(log32(n)) dereferencing
+
+## Key Technical Concepts
+
+### Memory Management
+- `struct cb`: Power-of-2 sized ring buffer is the foundation for all memory
+- Regions A/B/C exist within this ring buffer
+- Region A is mutable, regions B and C are read-only
+- Objects must be copied from B/C to A before modification using deriveMutableObjectLayer()
+
+### Reference Types
+- `cb_offset_t`: Offset into the ring buffer (O(1) dereference)
+- `ObjID`: Handle for GC-managed objects (O(log32(n)) dereference)
+- Serial number arithmetic is used for ring buffer offsets
+
+### Memory Safety
+- PIN_SCOPE extends object lifetime during sensitive operations
+- Assertion-Oriented Programming style with extensive use of asserts
+- Careful handling required for object references across GC cycles
+
+### Dereferencing Patterns
+- `cp()`, `mp()`: const/mutable pointers with O(1) access
+- `clip()`, `mlip()`: const/mutable local id-based pointers with O(log32(n)) access
+- Always use these explicit methods instead of direct pointer access
+
+## Development Practices
+
+### Build System
+- Build CB dependency first, then klox
+- Use `make -j CBROOT=/path/to/cb` for building
+
+### Testing
+- Run full test suite with `./util/test.py`
+- Benchmark using `./benchmark.sh`
+
+### Code Organization
+- Memory management code is the core innovation
+- VM and language functionality closely follows clox design
+- Focus on memory model rather than language features
+
+## Documentation Standards
+- Document performance costs explicitly
+- Use verbose method names to make costs apparent
+- Maintain clear separation between the memory model and VM implementation
+
+## Known Issues and Limitations
+- PIN_SCOPE has some edge cases needing attention
+- Some code sections would benefit from refactoring into smaller routines
+- The implementation prioritizes demonstrating the concept over production readiness
+
+## Project Goals
+- Demonstrate viability of O(1) GC approach
+- Evaluate performance tradeoffs in practice
+- Explore potential for this memory model in language design
