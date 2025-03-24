@@ -17,3 +17,6 @@ temp.lox
 
 # XCode user-specific stuff.
 xcuserdata/
+
+# VIM swapfiles
+.*.swp
