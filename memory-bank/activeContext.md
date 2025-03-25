@@ -12,7 +12,8 @@ The klox project is currently in a proof-of-concept state, with a functional imp
 
 - Implementation of the tri-partite memory model with A, B, and C regions
 - Completion of the garbage collection mechanism with concurrent compaction
-- Integration of the structmap_amt data structure for O(log32(n)) object lookup
+- Migration of structmap_amt implementation to cb library
+- Forward compatibility maintained through wrapper interface
 - Performance measurement and comparison with the original clox implementation
 
 ## Current System State
@@ -29,7 +30,7 @@ The system is currently functional and passes the test suite, demonstrating that
 
 While preserving the core approach, several opportunities exist for performance optimization:
 
-- Optimizing the structmap_amt lookup path for frequently accessed objects
+- Leveraging cb's optimized structmap_amt implementation for object lookups 
 - Exploring improvements to the deriveMutableObjectLayer() process for frequently modified objects
 - Investigating potential improvements to the region management strategy
 
@@ -52,7 +53,12 @@ The O(1) GC approach demonstrates several integration points with the VM:
 
 ### Short-term Goals
 
-1. **Documentation Refinement**:
+1. **Code Organization**:
+   - ✅ Migrated structmap_amt.h to cb library
+   - Identify additional code that could be migrated to cb
+   - Maintain clean separation between memory management and language runtime
+
+2. **Documentation Refinement**:
    - Further clarify the approach, especially the object lifecycle
    - Document specific performance characteristics with more detailed benchmarks
 

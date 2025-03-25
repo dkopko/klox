@@ -25,7 +25,7 @@ klox is currently a fully functional proof-of-concept implementation that demons
 
 ### Data Structures
 
-- ✅ structmap_amt for O(log32(n)) mapping
+- ✅ Integration with cb's structmap_amt for O(log32(n)) mapping
 - ✅ Partially-persistent red-black tree
 - ✅ PIN_SCOPE mechanism for object lifetime extension
 
@@ -39,6 +39,7 @@ klox is currently a fully functional proof-of-concept implementation that demons
 
 ### Implementation Refinements
 
+- ✅ Migrated structmap_amt implementation to cb library
 - 🔄 PIN_SCOPE implementation has some edge cases that need addressing
 - 🔄 Error handling could be improved in some areas
 - 🔄 Some code sections could benefit from better documentation
@@ -47,7 +48,7 @@ klox is currently a fully functional proof-of-concept implementation that demons
 
 ### Performance Optimizations
 
-- 🔄 Further optimization of structmap_amt lookup path
+- 🔄 Leverage optimizations in cb's structmap_amt implementation
 - 🔄 More efficient implementation of deriveMutableObjectLayer()
 - 🔄 Investigation of specialized handling for frequently accessed objects
 
@@ -115,7 +116,12 @@ These metrics confirm the expected tradeoff: significantly higher costs for dere
 
 ## Next Milestone Goals
 
-1. **Address PIN_SCOPE Limitations**:
+1. **Code Organization**:
+   - ✅ Migrated structmap_amt.h to cb library
+   - 🔄 Identify additional code that could be migrated to cb
+   - 🔄 Maintain clean separation between memory management and runtime
+
+2. **Address PIN_SCOPE Limitations**:
    - Identify and fix the known edge cases
    - Improve the safety of the mechanism
 

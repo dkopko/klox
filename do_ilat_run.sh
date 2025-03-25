@@ -8,7 +8,7 @@ SCRIPT_ROOT="$(cd "$(dirname "$0")" ; pwd)"
 CLOX_REPO="https://github.com/dkopko/craftinginterpreters.git"
 CB_REPO="https://github.com/dkopko/cb.git"
 KLOX_REPO="https://github.com/dkopko/klox.git"
-CB_LOCAL_ROOT="/home/daniel/workspace/cb"  #Adjust to a local CB path to test local changes.
+CB_LOCAL_ROOT="${SCRIPT_ROOT}/../cb"  #Adjust to a local CB path to test local changes.
 KLOX_LOCAL_ROOT="${SCRIPT_ROOT}"
 TESTBED_ROOT="${SCRIPT_ROOT}/testbed"
 
