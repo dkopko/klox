@@ -8,7 +8,7 @@
 #include <cb_region.h>
 #include <cb_term.h>
 
-#include "structmap_amt.h"
+#include <cb_structmap_amt.h>
 #include "trace.h"
 
 // VM thread state.
@@ -52,9 +52,9 @@ static const int OBJTABLELAYER_FIRSTLEVEL_BITS = 10;
 static const int FIELDS_FIRSTLEVEL_BITS = 0;
 static const int METHODS_FIRSTLEVEL_BITS = 0;
 
-typedef structmap_amt<19, 5> ObjTableSM;
-typedef structmap_amt<0, 5> MethodsSM;
-typedef structmap_amt<0, 5> FieldsSM;
+typedef cb_structmap_amt<19, 5> ObjTableSM;
+typedef cb_structmap_amt<0, 5> MethodsSM;
+typedef cb_structmap_amt<0, 5> FieldsSM;
 
 #if NDEBUG
 #define DEBUG_ONLY(x)
