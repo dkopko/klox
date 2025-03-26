@@ -67,10 +67,39 @@ The project incorporates various header files in the `external/` directory inclu
 
 ### Memory Management
 
+#### Ring Buffer Management
 - **Ring Buffer Constraints**: The continuous buffer is a power-of-2 sized ring, which means memory allocation follows specific patterns
 - **Serial Number Arithmetic**: Locations within the buffer use serial number arithmetic and must be compared with specialized functions
 - **Alignment Requirements**: Object allocations must account for alignment padding, affecting size calculations
 - **Value Size Limit**: Value may not be made larger than 64-bits, adhering to the NaN-boxing representation scheme
+
+#### Pin-Based Memory Protection
+
+The PIN_SCOPE mechanism provides critical memory safety during garbage collection:
+
+1. **Implementation**:
+   - Uses thread-local pinned_lower_bound variable
+   - RAII-style scoped_pin class manages bound lifecycle
+   - GC checks pinned_lower_bound during collection
+   - Prevents collection of memory below the pinned point
+
+2. **Technical Constraints**:
+   - Must be used during compilation phase
+   - Nested pins must maintain proper ordering
+   - Affects memory layout and GC timing
+   - Each pin tracks previous and current offsets
+
+3. **Performance Considerations**:
+   - Minimal overhead during normal execution
+   - Critical for preventing premature collection
+   - Helps avoid expensive object recreation
+   - GC skips collection below pinned_lower_bound
+
+4. **Current Limitations**:
+   - Some edge cases may need additional protection
+   - Implementation focuses on proving the concept
+   - Production use would require additional hardening
+   - Special care needed during region transitions
 
 ### Concurrency
 

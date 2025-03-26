@@ -127,8 +127,46 @@ The design explicitly shifts costs:
 
 ## Pin Mechanism
 
-- **PIN_SCOPE**: Extends the lifetime of allocated data
-- Prevents data from being collected during scope execution
+### Pin Mechanism Details
+
+The pin mechanism consists of two key components:
+
+1. **pinned_lower_bound**:
+   - Thread-local variable tracking the lower memory bound
+   - Prevents garbage collection below this bound
+   - Can be nested through multiple PIN_SCOPE blocks
+   - Critical for preserving temporary objects during GC
+
+2. **scoped_pin Class**:
+   ```cpp
+   class scoped_pin {
+     cb_offset_t prev_pin_offset_;  // Previous pin location
+     cb_offset_t curr_pin_offset_;  // Current pin location
+     
+     // Sets new pin at current region cursor
+     scoped_pin(): prev_pin_offset_(pinned_lower_bound) {
+       curr_pin_offset_ = cb_region_cursor(&thread_region);
+       if (pinned_lower_bound == CB_NULL)
+         pinned_lower_bound = curr_pin_offset_;
+     }
+     
+     // Restores previous pin on destruction
+     ~scoped_pin() {
+       pinned_lower_bound = prev_pin_offset_;
+     }
+   };
+   ```
+
+3. **Usage Patterns**:
+   - Entire compilation phase is pinned
+   - Object creation and manipulation operations
+   - String concatenation and similar operations
+   - Any operation creating temporary objects that must survive GC
+
+4. **Safety Mechanisms**:
+   - RAII pattern ensures proper pin cleanup
+   - Assertions verify pin ordering
+   - Debug tracing for pin operations
 - Critical for operations that might trigger GC
 
 ## Error Handling and Safety
