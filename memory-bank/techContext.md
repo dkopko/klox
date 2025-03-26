@@ -119,3 +119,101 @@ These verbose names are intentionally chosen for:
 
 - Some edge cases in PIN_SCOPE usage may be insufficient for protection
 - The implementation prioritizes demonstrating the concept over production readiness
+
+## NaN-Boxing Technique
+
+klox uses NaN-boxing (also called NaN-tagging) as a memory optimization technique for representing values in the language runtime. This approach leverages IEEE 754 double-precision floating point bit patterns to store different value types efficiently within a single 64-bit word.
+
+### Value Representation
+
+```c
+typedef struct { uint64_t val; } Value;
+```
+
+All values in klox (numbers, booleans, nil, objects) are unified under this single 64-bit representation.
+
+### IEEE 754 Double Precision and NaN
+
+In IEEE 754, a double-precision floating point value uses 64 bits:
+- 1 bit for sign (S)
+- 11 bits for exponent (E)
+- 52 bits for fraction/mantissa (F)
+
+A NaN value is represented when all exponent bits are 1s and the fraction is non-zero.
+
+### Bit Patterns
+
+```c
+// Sign bit (highest bit)
+#define SIGN_BIT ((uint64_t)0x8000000000000000)
+
+// Quiet NaN pattern
+#define QNAN ((uint64_t)0x7ffc000000000000)
+
+// Tag values for singletons
+#define TAG_NIL       1 // 001
+#define TAG_FALSE     2 // 010
+#define TAG_TRUE      3 // 011
+#define TAG_TOMBSTONE 4 // 100
+```
+
+### Value Type Encoding
+
+1. **Numbers**: Regular IEEE 754 doubles
+   - Identified by: `(val & QNAN) != QNAN` (NaN bits not set)
+   - Unlimited precision within double range
+
+2. **Objects**: `SIGN_BIT | QNAN | object_id`
+   - Identified by: `(val & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT)`
+   - ~51 bits available for object IDs (potential for 2^51 unique objects)
+
+3. **Booleans**:
+   - `TRUE_VAL`: `QNAN | TAG_TRUE`
+   - `FALSE_VAL`: `QNAN | TAG_FALSE`
+
+4. **Nil**: `QNAN | TAG_NIL`
+
+5. **Tombstone**: `QNAN | TAG_TOMBSTONE` (used internally in hash tables)
+
+### Type Detection Macros
+
+```c
+#define IS_NUMBER(v)  ((((v).val) & QNAN) != QNAN)
+#define IS_OBJ(v)     ((((v).val) & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT))
+#define IS_BOOL(v)    ((((v).val) & (SIGN_BIT | QNAN | TAG_FALSE)) == (QNAN | TAG_FALSE))
+#define IS_NIL(v)     (((v).val) == NIL_VAL.val)
+```
+
+### Value Creation and Conversion
+
+```c
+// Creation
+#define NUMBER_VAL(num)   numToValue(num)
+#define OBJ_VAL(objid)    ((Value) { (SIGN_BIT | QNAN | (uint64_t)((objid).id)) })
+#define BOOL_VAL(b)       ((Value) { ((b) ? TRUE_VAL : FALSE_VAL) })
+#define NIL_VAL           ((Value) { (uint64_t)(QNAN | TAG_NIL) })
+
+// Conversion
+#define AS_NUMBER(v)  valueToNum(v)
+#define AS_OBJ_ID(v)  ((ObjID) { ((v).val) & ~(SIGN_BIT | QNAN) })
+#define AS_BOOL(v)    (((v).val) == TRUE_VAL.val)
+```
+
+### Integration with Memory Model
+
+The NaN-boxing system is fully integrated with klox's O(1) garbage collection:
+
+1. For objects, the boxed value contains an ObjID, not a direct pointer
+2. The ObjID is used for lookup in the objtable to get the actual memory location
+3. This indirection supports the tripartite memory model (regions A, B, C)
+4. Object value dereferencing occurs via `AS_OBJ(v)` which converts through ObjID
+
+### Extensibility
+
+The current implementation uses 4 tag values (NIL, FALSE, TRUE, TOMBSTONE) but the pattern allows for additional singleton types or special values if needed. With each tag requiring only a few bits, there is ample room for extension within the NaN space.
+
+### Performance Implications
+
+- Type checking and singleton value operations are extremely fast (single bit operations)
+- Number operations require no conversion for arithmetic (direct IEEE 754)
+- Object operations require objtable lookup, which follows the O(log32(n)) cost model

@@ -12,6 +12,7 @@ klox is currently a fully functional proof-of-concept implementation that demons
 - ✅ O(1) garbage collection mechanism
 - ✅ Concurrent GC with main thread coordination
 - ✅ Tri-partite memory model (A/B/C regions)
+- ✅ NaN-boxing value representation
 - ✅ Test suite passing
 - ✅ REPL and script execution
 

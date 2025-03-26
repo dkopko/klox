@@ -41,6 +41,15 @@ The current implementation requires consideration of:
 - Initial sizing of the continuous buffer to avoid expensive resizes
 - Tuning GC frequency based on allocation patterns
 
+### NaN-Boxing Considerations
+
+The NaN-boxing implementation in klox has been fully documented in techContext.md. Key active considerations include:
+
+- The tagging approach provides ample room for extending with additional value types if needed
+- The integration of NaN-boxed values with the ObjID system is critical for the O(1) GC approach
+- Value representation has sufficient range (~51 bits) for object IDs, accommodating future scalability needs
+- Performance impact of the NaN-boxing approach is minimal for primitive values and arithmetic operations
+
 ## Integration Points
 
 The O(1) GC approach demonstrates several integration points with the VM:
