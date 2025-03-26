@@ -112,8 +112,10 @@ The PIN_SCOPE mechanism provides critical memory safety during garbage collectio
 - **Dereferencing Cost**: The O(log32(n)) cost of dereferencing objects is a fundamental constraint
 - **Buffer Resizing**: Resizing the continuous buffer is expensive and should be minimized
 - **Memory Estimation**: Ideally, program memory size should be estimated in advance to avoid need to resize the continuous buffer (cb)
-- **Pointer Caching Strategy**:
-  - Fields ending in "P" cache individual raw pointers, avoiding repeated O(log32(n)) lookups
+- **Pointer Caching Strategy (RCBP)**:
+  - RCBP<> (Rewritable Continuous Buffer Pointer) exists specifically to handle pointer invalidation when Mutator threads resize the continuous buffer
+  - Implementation uses thread-local linked lists to track cached pointers that need updating
+  - Fields ending in "P" cache individual raw pointers to avoid repeated O(log32(n)) lookups
   - Fields ending in "direct" cache array pointers into specific memory regions (A/B/C)
   - Edge Cases:
     - Memory layout changes during GC: Handled by gc_integration_epoch validation

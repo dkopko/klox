@@ -15,6 +15,7 @@ The klox project is currently in a proof-of-concept state, with a functional imp
 - Migration of structmap_amt implementation to cb library
 - Forward compatibility maintained through wrapper interface
 - Performance measurement and comparison with the original clox implementation
+- Clarified RCBP<> (Rewritable Continuous Buffer Pointer) usage in pointer caching strategy
 
 ## Current System State
 
@@ -33,6 +34,21 @@ While preserving the core approach, several opportunities exist for performance 
 - Leveraging cb's optimized structmap_amt implementation for object lookups 
 - Exploring improvements to the deriveMutableObjectLayer() process for frequently modified objects
 - Investigating potential improvements to the region management strategy
+
+### RCBP<> Pointer Caching Strategy
+
+The Rewritable Continuous Buffer Pointer (RCBP<>) template is a critical safety mechanism:
+- Core Purpose: Handles pointer invalidation when Mutator thread resizes the continuous buffer
+- Implementation:
+  * RCBP instances on each thread form their own thread-local linked list
+  * When Mutator resizes buffer (via cb_resize/cb_grow/cb_shrink), traverses its list to update cached pointers
+  * Lists are thread-local to prevent interference between Mutator and GC threads
+  * Only Mutator thread ever exercises its list since only Mutators can cause buffer resizes
+- GC Thread Usage:
+  * GC operates only in pre-allocated regions
+  * Never needs to resize the buffer
+  * Therefore GC's cached pointers never need rewriting
+- This linked list design ensures every cached pointer is properly updated when memory layout changes, maintaining system reliability
 
 ### Memory Sizing Considerations
 
