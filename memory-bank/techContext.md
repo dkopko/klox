@@ -70,6 +70,7 @@ The project incorporates various header files in the `external/` directory inclu
 - **Ring Buffer Constraints**: The continuous buffer is a power-of-2 sized ring, which means memory allocation follows specific patterns
 - **Serial Number Arithmetic**: Locations within the buffer use serial number arithmetic and must be compared with specialized functions
 - **Alignment Requirements**: Object allocations must account for alignment padding, affecting size calculations
+- **Value Size Limit**: Value may not be made larger than 64-bits, adhering to the NaN-boxing representation scheme
 
 ### Concurrency
 
