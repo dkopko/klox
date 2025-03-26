@@ -75,15 +75,17 @@ The GC implementation achieves essentially O(1) performance through a careful co
 ### Cached Raw Pointers
 
 - **RCBP Template**:
-  - RCBP<> (Rewritable Continuous Buffer Pointer) exists specifically to handle pointer invalidation during continuous buffer resizes
-  - Purpose: When a Mutator thread resizes the continuous buffer, all cached pointers into that buffer become invalid and must be updated
+  - RCBP<> (Rewritable Continuous Buffer Pointer) is exclusively used within the runtime's own stack implementation
+  - Not used in Obj objects that implement the target language's features (which use CBO/OID instead)
+  - Purpose: When a Mutator thread resizes the continuous buffer, runtime stack pointers become invalid and must be updated
   - Only Mutator threads can trigger buffer resizes via:
     * cb_resize
     * cb_grow
     * cb_shrink
-  - RCBP instances on a Mutator thread form a linked list for efficient traversal during resize
-  - GC thread can safely use RCBPs without the exercising the linked list mechanism because:
-    * GC only works in pre-allocated regions and therefore never causes buffer resizes, so GC's cached pointers never need rewriting
+  - RCBP instances on the runtime stack form a linked list for efficient traversal during resize
+  - GC thread can work with these stack pointers safely (even when held in RCBP<> instances due to common code paths) because:
+    * GC only works in pre-allocated regions and therefore never causes buffer resizes
+    * RCBP<> instances link into a thread-local linked list, preventing GC RCBP<> instances' operations from interfering with those of the Mutator thread.
   - Rewriting is necessary to maintain pointer validity since underlying memory addresses change
 - **Naming Patterns**:
   - Fields ending in "P" indicate individual cached raw pointers from earlier lookups
