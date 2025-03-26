@@ -83,6 +83,21 @@ The project incorporates various header files in the `external/` directory inclu
 - **Dereferencing Cost**: The O(log32(n)) cost of dereferencing objects is a fundamental constraint
 - **Buffer Resizing**: Resizing the continuous buffer is expensive and should be minimized
 - **Memory Estimation**: Ideally, program memory size should be estimated in advance to avoid need to resize the continuous buffer (cb)
+- **Pointer Caching Strategy**:
+  - Fields ending in "P" cache individual raw pointers, avoiding repeated O(log32(n)) lookups
+  - Fields ending in "direct" cache array pointers into specific memory regions (A/B/C)
+  - Edge Cases:
+    - Memory layout changes during GC: Handled by gc_integration_epoch validation
+    - Region shifts in tri-partite memory: Handled by explicit recaching (tristack/triframes)
+    - Buffer resizing: All cached pointers must be recached via recache functions
+  - Performance Impact:
+    - Trades memory (cached pointers) for speed (avoiding lookups)
+    - Critical for hot paths like VM stack frames and constant access
+    - Must balance cache coherency costs with lookup savings
+  - Safety Measures:
+    - Assertions verify pointer validity after recaching
+    - Explicit region ownership checks prevent race conditions
+    - All pointer caches must be updated atomically during GC integration
 
 ## Optimization Techniques
 

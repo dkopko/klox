@@ -72,6 +72,18 @@ The GC implementation achieves essentially O(1) performance through a careful co
 - Inspired by Hash Array Mapped Tries (HAMT)
 - Designed for efficiency in the context of the memory model
 
+### Cached Raw Pointers
+
+- **Naming Patterns**:
+  - Fields ending in "P" indicate individual cached raw pointers from earlier lookups
+  - Fields ending in "direct" indicate cached array pointers into specific memory regions (e.g., adirect, bdirect, cdirect)
+- **Invalidation Mechanisms**:
+  - Epoch-based validation: Pointers checked against gc_integration_epoch
+  - Explicit recaching: Through tristack_recache() and triframes_recache() functions
+  - Automatic recaching on buffer changes or GC cycles
+- **Performance Benefits**: Avoids repeated lookups for frequently accessed pointers
+- **Safety**: System ensures cached pointers remain valid through memory layout changes
+
 ### Red-Black Tree (`struct cb_bst`)
 
 - Partially-persistent red-black tree implementation
