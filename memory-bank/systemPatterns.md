@@ -118,6 +118,37 @@ The GC implementation achieves essentially O(1) performance through a careful co
 - **Synchronization**: Uses request/response mechanism between threads
 - **Integration Points**: GC responses are integrated during specific VM operations
 
+### CB Resize During GC
+
+When a CB resize occurs while GC is in progress, a sophisticated handoff ensures consistency:
+
+1. **Dual Buffer State**:
+   - Mutator creates new CB at double size and copies all contents
+   - Mutator continues execution in new CB
+   - GC continues working in old CB with its original contents
+
+2. **Thread Isolation**:
+   - GC thread maintains thread-local pointers to old CB
+   - GC operates only in pre-allocated regions (never causes resizes)
+   - Thread-local RCBP lists prevent pointer interference
+
+3. **Integration Protocol**:
+   - When GC completes, its target region in old CB must be copied to new CB
+   - This happens during the integration step when Mutator receives GC response
+   - Integration handles this by checking if orig_cb != thread_cb (meaning the orig_cb written-to by the GC is no longer equal to the thread_cb held by the Mutator)
+   - If CB was resized, it explicitly copies the consolidated newB region from old to new CB
+   - This ensures no GC work is lost during resize transitions
+
+4. **Safety Mechanisms**:
+   - GC regions are pre-sized to prevent resize during collection
+   - Pointer updates are managed through thread-local lists
+   - Integration step handles critical pointer adjustments:
+     * Frame pointers (functionP, constantsValuesP, ip_root, ip) are recalculated from function references
+     * Stack and frame caches are updated via tristack_recache and triframes_recache
+     * VM's currentFrame pointer is reestablished to point into new buffer
+     * Object table layers are recached to point to correct buffer locations
+     * Current frame is ensured to be mutable through triframes_ensureCurrentFrameIsMutable
+
 ## Design Decisions and Tradeoffs
 
 ### Performance Shift
