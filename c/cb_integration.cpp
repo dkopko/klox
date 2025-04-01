@@ -299,7 +299,7 @@ objtablelayer_traverse(const struct cb                **cb,
 
   // Traverse the structmap entries.
   ret = layer->sm->traverse(cb,
-                            (structmap_traverse_func_t)func,
+                            (cb_structmap_amt_traverse_func_t)func,
                             closure);
   assert(ret == 0);
 
