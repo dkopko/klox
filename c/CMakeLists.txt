@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(klox CXX)
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 find_library(CB_LIB cb)
@@ -10,21 +10,21 @@ find_path(XXHASH_INCLUDE "external/xxhash.h")
 option(COVERAGE "Build with test coverage" OFF)
 
 set(KLOX_SOURCES
-  "${CMAKE_SOURCE_DIR}/cb_integration.cpp"
-  "${CMAKE_SOURCE_DIR}/chunk.cpp"
-  "${CMAKE_SOURCE_DIR}/compiler.cpp"
-  "${CMAKE_SOURCE_DIR}/debug.cpp"
-  "${CMAKE_SOURCE_DIR}/main.cpp"
-  "${CMAKE_SOURCE_DIR}/memory.cpp"
-  "${CMAKE_SOURCE_DIR}/object.cpp"
-  "${CMAKE_SOURCE_DIR}/scanner.cpp"
-  "${CMAKE_SOURCE_DIR}/table.cpp"
-  "${CMAKE_SOURCE_DIR}/value.cpp"
-  "${CMAKE_SOURCE_DIR}/vm.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cb_integration.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/chunk.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/compiler.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/debug.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/memory.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/object.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/scanner.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/table.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/value.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/vm.cpp"
 )
 
 include_directories(
-  "${CMAKE_SOURCE_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CB_INCLUDE}"
   "${XXHASH_INCLUDE}"
 )
