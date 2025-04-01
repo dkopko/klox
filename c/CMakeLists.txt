@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.5)
+cmake_minimum_required(VERSION 3.10)
 project(klox CXX)
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
 set(CMAKE_VERBOSE_MAKEFILE ON)

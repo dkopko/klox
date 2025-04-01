@@ -1,13 +1,12 @@
-
 # This Makefile leverages CMake to produce the several different build types.
 # This gives the ability to call 'make' in the root of the project and get
 # sensible results, which allows nice integration into vim's ':make' command,
 # as well as aliases like make='bear make' for integration with YouCompleteMe.
 
-PROJECTROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-BUILDROOT := $(abspath $(PROJECTROOT)/BUILD)
-CBROOT := /home/daniel/workspace/cb
-CBBUILDROOT := $(CBROOT)/BUILD
+KLOX_ROOT := $(patsubst %/,%,$(dir $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))))
+KLOX_BUILD_ROOT := $(KLOX_ROOT)/c/BUILD
+CB_ROOT ?= $(dir $(KLOX_ROOT))/cb
+CB_BUILD_ROOT := $(CB_ROOT)/BUILD
 
 .DEFAULT_GOAL := all
 .PHONY : all
@@ -15,40 +14,41 @@ all : debug release relwithdebinfo minsizerel coverage
 
 .PHONY : echo
 echo :
-	@echo "PROJECTROOT=$(PROJECTROOT)"
-	@echo "BUILDROOT=$(BUILDROOT)"
+	@echo "KLOX_ROOT=$(KLOX_ROOT)"
+	@echo "KLOX_BUILD_ROOT=$(KLOX_BUILD_ROOT)"
+	@echo "CB_ROOT=$(CB_ROOT)"
+	@echo "CB_BUILD_ROOT=$(CB_BUILD_ROOT)"
 
 .PHONY : clean
 clean :
-	$(RM) -r "$(BUILDROOT)"
+	$(RM) -r "$(KLOX_BUILD_ROOT)"
 
 .PHONY : debug
 debug :
-	mkdir -p "$(BUILDROOT)/Debug"
-	cd "$(BUILDROOT)/Debug" ; cmake "$(PROJECTROOT)" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=$(CBBUILDROOT)/Debug -DCMAKE_INCLUDE_PATH=$(CBROOT)/src\;$(CBROOT)
-	$(MAKE) -C "$(BUILDROOT)/Debug"
+	mkdir -p "$(KLOX_BUILD_ROOT)/Debug"
+	cd "$(KLOX_BUILD_ROOT)/Debug" ; cmake "$(KLOX_ROOT)/c" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=$(CB_BUILD_ROOT)/Debug -DCMAKE_INCLUDE_PATH=$(CB_ROOT)/src\;$(CB_ROOT)
+	$(MAKE) -C "$(KLOX_BUILD_ROOT)/Debug"
 
 .PHONY : release
 release :
-	mkdir -p "$(BUILDROOT)/Release"
-	cd "$(BUILDROOT)/Release" ; cmake "$(PROJECTROOT)" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$(CBBUILDROOT)/Release -DCMAKE_INCLUDE_PATH=$(CBROOT)/src\;$(CBROOT)
-	$(MAKE) -C "$(BUILDROOT)/Release"
+	mkdir -p "$(KLOX_BUILD_ROOT)/Release"
+	cd "$(KLOX_BUILD_ROOT)/Release" ; cmake "$(KLOX_ROOT)/c" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$(CB_BUILD_ROOT)/Release -DCMAKE_INCLUDE_PATH=$(CB_ROOT)/src\;$(CB_ROOT)
+	$(MAKE) -C "$(KLOX_BUILD_ROOT)/Release"
 
 .PHONY : RelWithDebInfo
 relwithdebinfo :
-	mkdir -p "$(BUILDROOT)/RelWithDebInfo"
-	cd "$(BUILDROOT)/RelWithDebInfo" ; cmake "$(PROJECTROOT)" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=$(CBBUILDROOT)/RelWithDebInfo -DCMAKE_INCLUDE_PATH=$(CBROOT)/src\;$(CBROOT)
-	$(MAKE) -C "$(BUILDROOT)/RelWithDebInfo"
+	mkdir -p "$(KLOX_BUILD_ROOT)/RelWithDebInfo"
+	cd "$(KLOX_BUILD_ROOT)/RelWithDebInfo" ; cmake "$(KLOX_ROOT)/c" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=$(CB_BUILD_ROOT)/RelWithDebInfo -DCMAKE_INCLUDE_PATH=$(CB_ROOT)/src\;$(CB_ROOT)
+	$(MAKE) -C "$(KLOX_BUILD_ROOT)/RelWithDebInfo"
 
 .PHONY : minsizerel
 minsizerel :
-	mkdir -p "$(BUILDROOT)/MinSizeRel"
-	cd "$(BUILDROOT)/MinSizeRel" ; cmake "$(PROJECTROOT)" -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_PREFIX_PATH=$(CBBUILDROOT)/MinSizeRel -DCMAKE_INCLUDE_PATH=$(CBROOT)/src\;$(CBROOT)
-	$(MAKE) -C "$(BUILDROOT)/MinSizeRel"
+	mkdir -p "$(KLOX_BUILD_ROOT)/MinSizeRel"
+	cd "$(KLOX_BUILD_ROOT)/MinSizeRel" ; cmake "$(KLOX_ROOT)/c" -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_PREFIX_PATH=$(CB_BUILD_ROOT)/MinSizeRel -DCMAKE_INCLUDE_PATH=$(CB_ROOT)/src\;$(CB_ROOT)
+	$(MAKE) -C "$(KLOX_BUILD_ROOT)/MinSizeRel"
 
 .PHONY : coverage
 coverage :
-	mkdir -p "$(BUILDROOT)/Coverage"
-	cd "$(BUILDROOT)/Coverage" ; cmake "$(PROJECTROOT)" -DCMAKE_BUILD_TYPE=Coverage -DCMAKE_PREFIX_PATH=$(CBBUILDROOT)/Coverage -DCMAKE_INCLUDE_PATH=$(CBROOT)/src\;$(CBROOT)
-	$(MAKE) -C "$(BUILDROOT)/Coverage"
-
+	mkdir -p "$(KLOX_BUILD_ROOT)/Coverage"
+	cd "$(KLOX_BUILD_ROOT)/Coverage" ; cmake "$(KLOX_ROOT)/c" -DCMAKE_BUILD_TYPE=Coverage -DCMAKE_PREFIX_PATH=$(CB_BUILD_ROOT)/Coverage -DCMAKE_INCLUDE_PATH=$(CB_ROOT)/src\;$(CB_ROOT)
+	$(MAKE) -C "$(KLOX_BUILD_ROOT)/Coverage"
