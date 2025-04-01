@@ -7,6 +7,7 @@ clox
 exercises/chapter01_introduction/3/linked_list
 *.pyc
 .idea/
+compile_commands.json
 
 # Photoshop docs are pretty huge and I'm not sure if I want to stuff them into
 # Git yet.
@@ -20,3 +21,4 @@ xcuserdata/
 
 # VIM swapfiles
 .*.swp
+
