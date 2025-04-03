@@ -22,3 +22,8 @@ xcuserdata/
 # VIM swapfiles
 .*.swp
 
+c/.cache
+ilat.clox.out
+ilat.klox.out
+ilat_compare.*.out
+testbed/
