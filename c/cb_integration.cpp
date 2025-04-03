@@ -15,10 +15,6 @@
 #include <chrono>
 #include <thread>
 
-__thread struct cb        *thread_cb            = NULL;
-__thread struct cb_at_immed_param_t thread_cb_at_immed_param;
-__thread struct cb_region  thread_region;
-__thread cb_offset_t       thread_cutoff_offset = (cb_offset_t)0ULL;
 __thread struct ObjTable   thread_objtable;
 
 //NOTE: For tandem allocations not yet having a presence in the VM state, we
@@ -37,7 +33,6 @@ __thread unsigned int      snap_addl_collision_nodes;
 __thread uintmax_t         thread_preserved_objects_count;
 __thread uintmax_t         thread_new_objects_since_last_gc_count;
 
-static __thread struct rcbp      *thread_rcbp_list        = NULL;
 
 
 struct cb_region  gc_thread_grayset_bst_region;
@@ -75,50 +70,6 @@ scoped_pin::~scoped_pin() {
   KLOX_TRACE("end pin @ %ju (%s:%d)\n", (uintmax_t)curr_pin_offset_, func_, line_);
   assert(cb_offset_cmp(pinned_lower_bound, curr_pin_offset_) == -1 || cb_offset_cmp(pinned_lower_bound, curr_pin_offset_) == 0);
   pinned_lower_bound = prev_pin_offset_;
-}
-
-
-void
-rcbp_add(struct rcbp *item) {
-  if (thread_rcbp_list)
-    thread_rcbp_list->prev_ = item;
-  item->next_ = thread_rcbp_list;
-  item->prev_ = NULL;
-  thread_rcbp_list = item;
-}
-
-void
-rcbp_remove(struct rcbp *item) {
-  if (item->prev_)
-    item->prev_->next_ = item->next_;
-  if (item->next_)
-    item->next_->prev_ = item->prev_;
-  if (thread_rcbp_list == item)
-    thread_rcbp_list = item->next_;
-}
-
-void
-rcbp_rewrite_list(struct cb *new_cb)
-{
-  struct rcbp *item = thread_rcbp_list;
-
-  KLOX_TRACE("BEGIN REWRITE LIST\n");
-  while (item) {
-    if (item->offset_ != CB_NULL) {
-      void *new_pointer = cb_at(new_cb, item->offset_);
-
-      KLOX_TRACE("Rewriting pointer %p of cb:%p to %p of new_cb:%p\n",
-                 item->pointer_, item->cb_, new_pointer, new_cb);
-
-      item->pointer_ = new_pointer;
-      item->cb_ = new_cb;
-    } else {
-      KLOX_TRACE("rewrite list item %p has CB_NULL offset, so not rewriting.\n", item);
-    }
-
-    item = item->next_;
-  }
-  KLOX_TRACE("END REWRITE LIST\n");
 }
 
 
