@@ -8,6 +8,7 @@ SCRIPT_ROOT="$(cd "$(dirname "$0")" ; pwd)"
 CLOX_REPO="https://github.com/dkopko/craftinginterpreters.git"
 CB_REPO="https://github.com/dkopko/cb.git"
 KLOX_REPO="https://github.com/dkopko/klox.git"
+CLOX_LOCAL_ROOT="$(cd "${SCRIPT_ROOT}/../craftinginterpreters" ; pwd)"
 CB_LOCAL_ROOT="$(cd "${SCRIPT_ROOT}/../cb" ; pwd)"
 KLOX_LOCAL_ROOT="$(cd "${SCRIPT_ROOT}" ; pwd)"
 TESTBED_ROOT="${SCRIPT_ROOT}/testbed"
@@ -16,7 +17,7 @@ rm -rf "${TESTBED_ROOT}"
 mkdir -p "${TESTBED_ROOT}"
 cd "${TESTBED_ROOT}"
 
-git clone "${CLOX_REPO}" || true
+git clone "${CLOX_LOCAL_ROOT}" || git clone "${CLOX_REPO}" || true
 
 git clone "${CB_LOCAL_ROOT}" || git clone "${CB_REPO}" || true
 if [[ -d "${CB_LOCAL_ROOT}" ]]
