@@ -390,7 +390,7 @@ void initVM() {
   assert(ret == CB_SUCCESS);
   ret = cb_region_memalign(&thread_cb, &thread_region, &blank, alignof(ObjTableSM), sizeof(ObjTableSM));
   assert(ret == CB_SUCCESS);
-  objtable_init(&thread_objtable, thread_cb, a, blank, blank);
+  objtable_init(&thread_objtable, thread_cb, a, blank, blank, &klox_allocation_size, &deriveMutableObjectLayer);
 
   initTable(&vm.globals, &klox_value_shallow_comparator, &klox_value_render);
   initTable(&vm.strings, &klox_value_deep_comparator, &klox_value_render);
