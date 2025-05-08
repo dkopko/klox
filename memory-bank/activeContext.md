@@ -80,20 +80,26 @@ The O(1) GC approach demonstrates several integration points with the VM:
 
 1. **Code Organization**:
    - ✅ Migrated structmap_amt.h to cb library
-   - Identify additional code that could be migrated to cb
-   - Maintain clean separation between memory management and language runtime
-
-2. **Documentation Refinement**:
-   - Further clarify the approach, especially the object lifecycle
-   - Document specific performance characteristics with more detailed benchmarks
+   - ✅ Implemented RCBP<> pointer caching for safe buffer resizing
+   - ✅ Complete object table integration with cb library
+   - [ ] Document pointer caching patterns and usage
 
 2. **Testing Enhancement**:
-   - Develop additional stress tests for the memory management system
-   - Test with larger/more complex programs to validate scalability
+   - [ ] Comprehensive testing of RCBP<> across scenarios
+   - [ ] Stress tests for buffer resizing with cached pointers
+   - [ ] Performance benchmarks for object table operations
+   - [ ] Test with larger/more complex programs to validate scalability
 
-3. **Performance Analysis**:
-   - Identify hotspots in the current implementation
-   - Evaluate specific workloads where this approach excels or struggles
+3. **Documentation Refinement**:
+   - [ ] Document RCBP<> implementation and thread safety considerations
+   - [ ] Update object lifecycle documentation with pointer caching details
+   - [ ] Document specific performance characteristics with detailed benchmarks
+
+4. **Performance Analysis**:
+   - [ ] Benchmark object table operations with cb implementation
+   - [ ] Measure impact of RCBP<> on different workloads
+   - [ ] Profile buffer resize operations with cached pointers
+   - [ ] Evaluate thread contention patterns
 
 ### Medium-term Considerations
 
